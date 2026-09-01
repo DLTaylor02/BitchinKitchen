@@ -4,11 +4,12 @@ CREATE TABLE IF NOT EXISTS settings (
 CREATE TABLE IF NOT EXISTS users (
   id BIGSERIAL PRIMARY KEY,
   name VARCHAR(100) NOT NULL,
-  email VARCHAR(255) NOT NULL UNIQUE,
   password_hash VARCHAR(255) NOT NULL,
   role VARCHAR(20) NOT NULL DEFAULT 'user' CHECK (role IN ('superadmin','admin','user')),
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+ALTER TABLE users DROP COLUMN IF EXISTS email;
+CREATE UNIQUE INDEX IF NOT EXISTS users_name_unique ON users (lower(name));
 CREATE UNIQUE INDEX IF NOT EXISTS one_superadmin ON users ((role)) WHERE role = 'superadmin';
 CREATE TABLE IF NOT EXISTS recipes (
   id BIGSERIAL PRIMARY KEY,

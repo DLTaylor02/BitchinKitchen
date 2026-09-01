@@ -36,21 +36,17 @@ To use a custom port:
 sudo ./setup.sh 8088
 ```
 
-`setup.sh` installs any missing NGINX, PostgreSQL, PHP 8.2+, PHP-FPM extensions, Composer, and supporting packages. It then creates a dedicated PostgreSQL role and database, generates strong application/database secrets, installs Composer packages, configures an isolated NGINX site, enables services, and checks the NGINX configuration before restarting it. Existing NGINX site files are not removed or overwritten.
-
-Open `http://localhost:7373/install` (or your custom port). The web installer creates the database schema and sole superadmin, then permanently locks itself.
-
-The generated server listens only on `127.0.0.1` and its own port, so it coexists with current NGINX applications. Change the listen address or add a reverse-proxy server block if remote access is required. Set `APP_URL` to the public URL when doing so.
-
-## Local development on Debian
-
-After running `setup.sh`, PHP's built-in server can be used instead of NGINX during development:
+The installer securely prompts for the initial superadmin username and password. Accounts do not use email addresses. For automated installation, provide the credentials as environment variables:
 
 ```sh
-composer serve
+sudo SUPERADMIN_NAME="Kitchen Owner" \
+  SUPERADMIN_PASSWORD="a-strong-12+-character-password" \
+  ./setup.sh 7373
 ```
 
-Visit `/install` to initialize the schema and superadmin.
+`setup.sh` installs any missing NGINX, PostgreSQL, PHP 8.2+, PHP-FPM extensions, Composer, and supporting packages. It creates the PostgreSQL role and database, applies the complete schema, creates the sole superadmin, generates strong application/database secrets, installs Composer packages, configures NGINX, enables services, and validates the NGINX configuration before restarting it. No browser-based installation step is required. Existing NGINX site files are not removed.
+
+The application listens on `0.0.0.0:7373` by default, or on the custom port supplied to `setup.sh`. It therefore accepts connections on every network interface while remaining isolated from existing NGINX applications on other ports. Set the `APP_URL` environment variable while running setup if the detected server address is not its public URL.
 
 ## Roles and privacy
 

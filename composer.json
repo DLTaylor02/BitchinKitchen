@@ -7,6 +7,5 @@
     "ext-pdo": "*",
     "ext-fileinfo": "*"
   },
-  "autoload": { "psr-4": { "App\\": "src/" } },
-  "scripts": { "serve": "php -S 0.0.0.0:7373 -t public" }
+  "autoload": { "psr-4": { "App\\": "src/" } }
 }

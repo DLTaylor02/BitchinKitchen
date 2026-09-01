@@ -1,8 +1,8 @@
 # Include the generated copy from your existing NGINX http block. This server
 # listens on its own port and does not replace any existing application.
 server {
-    listen 127.0.0.1:{{PORT}};
-    server_name localhost;
+    listen 0.0.0.0:{{PORT}};
+    server_name _;
     root "{{PROJECT_ROOT}}/public";
     index index.php;
     client_max_body_size 32M;
