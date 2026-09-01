@@ -9,3 +9,4 @@
 .actions{display:flex;align-items:center;justify-content:flex-end;gap:10px;flex-wrap:wrap}.actions form{margin:0}.secondary:hover{background:var(--line);color:var(--text)}
 .link{padding:8px 12px;border-radius:10px;border:1px solid transparent;box-shadow:none}.link:hover{background:var(--surface2);border-color:var(--line);color:var(--text);box-shadow:none}
 .danger{background:#a43d35;color:#fff;box-shadow:none}.danger:hover{background:#7e2924}
+.photo-editor{grid-template-columns:repeat(2,1fr)}.photo-editor-item{display:grid;gap:5px;padding:6px;border:1px solid var(--line);border-radius:10px;background:var(--surface2)}.photo-editor-item img{aspect-ratio:1}.photo-editor-item label{display:flex;align-items:center;gap:5px;font-size:.75rem;font-weight:600}.photo-editor-item input{width:auto;margin:0}.photo-remove{color:#a43d35}

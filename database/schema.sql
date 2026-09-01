@@ -1,6 +1,7 @@
 CREATE TABLE IF NOT EXISTS settings (
   key VARCHAR(80) PRIMARY KEY, value TEXT NOT NULL
 );
+INSERT INTO settings (key,value) VALUES ('session_timeout_minutes','24') ON CONFLICT (key) DO NOTHING;
 CREATE TABLE IF NOT EXISTS users (
   id BIGSERIAL PRIMARY KEY,
   name VARCHAR(100) NOT NULL,

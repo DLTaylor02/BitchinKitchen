@@ -1,0 +1,3 @@
+<div class="narrow"><div class="panel"><p class="eyebrow">SUPERADMIN</p><h1>Application settings</h1><form method="post" action="/admin/settings" class="stack"><?=csrf()?>
+<label>Session inactivity timeout <small>Minutes before inactive users must sign in again. Enter 0 for no inactivity timeout.</small><input type="number" name="session_timeout_minutes" value="<?=e($sessionMinutes)?>" min="0" max="5256000" required inputmode="numeric"></label>
+<button>Save settings</button></form><p class="muted">Changes apply globally. Existing sessions use the new timeout on their next request.</p></div></div>

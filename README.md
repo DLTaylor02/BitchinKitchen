@@ -14,6 +14,7 @@ A mobile-first PHP recipe community for Debian where cooks publish recipes, keep
 - Multi-photo galleries; the first upload automatically becomes the search thumbnail
 - Adaptive (default), light, and dark baking-inspired themes
 - Three roles: one immutable superadmin, Web Admins who manage user roles, and regular users
+- Superadmin-controlled global inactivity timeout, including a no-timeout option
 - CSRF protection, secure password hashing, parameterized SQL, MIME-checked uploads
 - Native PHP/PostgreSQL/NGINX deployment that does not replace existing NGINX applications
 
@@ -74,3 +75,16 @@ sudo php /var/www/bitchinkitchen/bin/reset-superadmin-password.php
 ```
 
 The command identifies the sole superadmin and securely prompts for the new password twice without displaying the input. Passwords must contain at least 12 characters. It changes only the superadmin password; the username, role, recipes, and other users are unaffected.
+
+## Session timeout
+
+The default inactivity timeout is 24 minutes, matching the application's previous behavior. The superadmin can change it from **Settings** in the Web UI. The value applies to every user:
+
+- Enter the number of inactive minutes allowed before users must sign in again.
+- Enter `0` to disable inactivity expiration.
+
+Web Admins and regular users cannot view or change this setting. Existing sessions begin using a changed value on their next request.
+
+## License
+
+Bitchin' Kitchen is available under the [MIT License](LICENSE). You may use, copy, modify, distribute, sublicense, or sell the software, provided the copyright and license notice are retained. The software is provided without warranty.

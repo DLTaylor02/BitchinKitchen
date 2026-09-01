@@ -9,8 +9,9 @@ final class Auth {
     public static function login(string $name, string $password): bool {
         $q=Database::connection()->prepare('SELECT * FROM users WHERE lower(name)=lower(?)'); $q->execute([$name]); $u=$q->fetch();
         if (!$u || !password_verify($password,$u['password_hash'])) return false;
-        session_regenerate_id(true); $_SESSION['user_id']=$u['id']; return true;
+        session_regenerate_id(true); $_SESSION['user_id']=$u['id']; $_SESSION['_last_activity']=time(); return true;
     }
     public static function requireUser(): array { $u=self::user(); if(!$u){ flash('Please sign in first.','error'); redirect('/login'); } return $u; }
     public static function requireAdmin(): array { $u=self::requireUser(); if(!in_array($u['role'],['admin','superadmin'],true)) abort(403); return $u; }
+    public static function requireSuperadmin(): array { $u=self::requireUser(); if($u['role']!=='superadmin') abort(403); return $u; }
 }
