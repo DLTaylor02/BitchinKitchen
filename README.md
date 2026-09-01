@@ -10,6 +10,7 @@ A mobile-first PHP recipe community for Debian where cooks publish recipes, keep
 - Multi-photo galleries; the first upload automatically becomes the search thumbnail
 - Adaptive (default), light, and dark baking-inspired themes
 - Three roles: one immutable superadmin, Web Admins who manage user roles, and regular users
+- Closed registration; Web Admins and the superadmin create accounts and reset passwords from the Users page
 - CSRF protection, secure password hashing, parameterized SQL, MIME-checked uploads
 - Native PHP/PostgreSQL/NGINX deployment that does not replace existing NGINX applications
 

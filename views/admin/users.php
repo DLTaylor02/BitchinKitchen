@@ -1,1 +1,16 @@
-<div class="section-head"><div><p class="eyebrow">ADMINISTRATION</p><h1>Kitchen crew</h1></div><span><?=count($users)?> people</span></div><div class="table-wrap"><table><thead><tr><th>Username</th><th>Joined</th><th>Role</th></tr></thead><tbody><?php foreach($users as $u):?><tr><td><b><?=e($u['name'])?></b></td><td><?=date('M j, Y',strtotime($u['created_at']))?></td><td><?php if($u['role']==='superadmin'):?><span class="badge">Superadmin</span><?php elseif((int)$u['id']===(int)$current['id']):?><span class="badge"><?=e($u['role'])?></span><?php else:?><form method="post" action="/admin/users/<?=$u['id']?>/role" class="inline"><?=csrf()?><select name="role"><option value="user" <?=$u['role']==='user'?'selected':''?>>User</option><option value="admin" <?=$u['role']==='admin'?'selected':''?>>Web Admin</option></select><button class="small">Save</button></form><?php endif?></td></tr><?php endforeach?></tbody></table></div>
+<div class="section-head"><div><p class="eyebrow">ADMINISTRATION</p><h1>Kitchen crew</h1></div><span><?=count($users)?> people</span></div>
+
+<section class="panel admin-create"><h2>Create user</h2><form method="post" action="/admin/users" class="admin-create-form"><?=csrf()?>
+<label>Username<input name="name" minlength="2" maxlength="100" required autocomplete="off"></label>
+<label>Initial password<input type="password" name="password" minlength="8" required autocomplete="new-password"></label>
+<label>Role<select name="role"><option value="user">User</option><option value="admin">Web Admin</option></select></label>
+<button>Create user</button></form></section>
+
+<div class="user-list"><?php foreach($users as $managed):?>
+<article class="panel user-row"><div class="user-identity"><h3><?=e($managed['name'])?></h3><small>Joined <?=date('M j, Y',strtotime($managed['created_at']))?></small></div>
+<div class="user-controls">
+<?php if($managed['role']==='superadmin'):?><span class="badge">Superadmin</span>
+<?php elseif((int)$managed['id']===(int)$current['id']):?><span class="badge"><?=e($managed['role'])?></span>
+<?php else:?><form method="post" action="/admin/users/<?=$managed['id']?>/role" class="inline"><?=csrf()?><select name="role" aria-label="Role for <?=e($managed['name'])?>"><option value="user" <?=$managed['role']==='user'?'selected':''?>>User</option><option value="admin" <?=$managed['role']==='admin'?'selected':''?>>Web Admin</option></select><button class="small">Change role</button></form><?php endif?>
+<?php if($managed['role']!=='superadmin'||($current['role']==='superadmin'&&(int)$managed['id']===(int)$current['id'])):?><form method="post" action="/admin/users/<?=$managed['id']?>/password" class="inline password-reset"><?=csrf()?><input type="password" name="password" minlength="8" required autocomplete="new-password" placeholder="New password" aria-label="New password for <?=e($managed['name'])?>"><button class="small secondary">Set password</button></form><?php endif?>
+</div></article><?php endforeach?></div>
