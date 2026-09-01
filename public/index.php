@@ -1,0 +1,51 @@
+<?php
+declare(strict_types=1);
+require dirname(__DIR__).'/vendor/autoload.php';
+use App\{Auth,Csrf,Database,Env,View};
+Env::load(dirname(__DIR__).'/.env');
+session_name('bitchin_kitchen'); session_start(['cookie_httponly'=>true,'cookie_samesite'=>'Lax','cookie_secure'=>isset($_SERVER['HTTPS'])]);
+
+function e(mixed $v): string { return htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8'); }
+function url(string $path=''): string { return rtrim((string)App\Env::get('APP_URL',''),'/').$path; }
+function redirect(string $to): never { header('Location: '.$to); exit; }
+function abort(int $code, string $message=''): never { http_response_code($code); App\View::render('error',['code'=>$code,'message'=>$message ?: ($code===403?'That is not yours to edit.':'Page not found.')]); exit; }
+function flash(string $message, string $type='success'): void { $_SESSION['_flash'][]=[$type,$message]; }
+function csrf(): string { return '<input type="hidden" name="_token" value="'.e(App\Csrf::token()).'">'; }
+function method_is(string $method): bool { return $_SERVER['REQUEST_METHOD'] === $method; }
+function recipe(int $id, bool $includePrivate=false): array {
+    $sql='SELECT r.*,u.name owner_name,(SELECT filename FROM recipe_photos WHERE recipe_id=r.id ORDER BY sort_order,id LIMIT 1) thumbnail FROM recipes r JOIN users u ON u.id=r.user_id WHERE r.id=?';
+    if(!$includePrivate) $sql.=' AND r.is_public=true'; $q=Database::connection()->prepare($sql); $q->execute([$id]); return $q->fetch() ?: abort(404);
+}
+function save_photos(int $recipeId): void {
+    if(empty($_FILES['photos']['name'][0])) return;
+    $max=(int)Env::get('UPLOAD_MAX_MB',8)*1024*1024; $finfo=new finfo(FILEINFO_MIME_TYPE); $allowed=['image/jpeg'=>'jpg','image/png'=>'png','image/webp'=>'webp','image/gif'=>'gif'];
+    $order=(int)Database::connection()->query('SELECT COALESCE(MAX(sort_order),-1)+1 FROM recipe_photos WHERE recipe_id='.(int)$recipeId)->fetchColumn();
+    foreach($_FILES['photos']['tmp_name'] as $i=>$tmp){ if($_FILES['photos']['error'][$i]!==UPLOAD_ERR_OK) continue; if($_FILES['photos']['size'][$i]>$max) continue; $mime=$finfo->file($tmp); if(!isset($allowed[$mime])) continue; $name=bin2hex(random_bytes(16)).'.'.$allowed[$mime]; if(move_uploaded_file($tmp,__DIR__.'/uploads/'.$name)){ $q=Database::connection()->prepare('INSERT INTO recipe_photos(recipe_id,filename,sort_order) VALUES(?,?,?)'); $q->execute([$recipeId,$name,$order++]); } }
+}
+
+$path=parse_url($_SERVER['REQUEST_URI'],PHP_URL_PATH) ?: '/';
+try {
+if($path==='/install') { require dirname(__DIR__).'/src/install.php'; exit; }
+try { Database::connection()->query('SELECT 1 FROM settings LIMIT 1'); } catch(Throwable) { redirect('/install'); }
+
+if($path==='/' && method_is('GET')) {
+    $q=trim($_GET['q']??''); $mine=($_GET['mine']??'')==='1'; $user=Auth::user();
+    $where=$mine&&$user?'r.user_id=:uid':'r.is_public=true'; $params=$mine&&$user?['uid'=>$user['id']]:[];
+    if($q!==''){ $where.=" AND r.search_vector @@ websearch_to_tsquery('english',:q)"; $params['q']=$q; }
+    $sql="SELECT r.*,u.name owner_name,p.filename thumbnail FROM recipes r JOIN users u ON u.id=r.user_id LEFT JOIN LATERAL (SELECT filename FROM recipe_photos WHERE recipe_id=r.id ORDER BY sort_order,id LIMIT 1)p ON true WHERE $where ORDER BY ".($q!==''?"ts_rank(r.search_vector,websearch_to_tsquery('english',:q)) DESC,":"").' r.updated_at DESC LIMIT 60';
+    $st=Database::connection()->prepare($sql); $st->execute($params); View::render('home',['recipes'=>$st->fetchAll(),'query'=>$q,'mine'=>$mine]);
+} elseif($path==='/register' && method_is('GET')) View::render('auth/register');
+elseif($path==='/register' && method_is('POST')) { Csrf::verify(); $name=trim($_POST['name']??'');$email=trim($_POST['email']??'');$pass=$_POST['password']??''; if(!$name||!filter_var($email,FILTER_VALIDATE_EMAIL)||strlen($pass)<8){flash('Use a name, valid email, and password of at least 8 characters.','error');redirect('/register');} try{$q=Database::connection()->prepare("INSERT INTO users(name,email,password_hash,role)VALUES(?,?,?,'user') RETURNING id");$q->execute([$name,$email,password_hash($pass,PASSWORD_DEFAULT)]);$_SESSION['user_id']=$q->fetchColumn();redirect('/');}catch(Throwable){flash('That email is already registered.','error');redirect('/register');} }
+elseif($path==='/login' && method_is('GET')) View::render('auth/login');
+elseif($path==='/login' && method_is('POST')) { Csrf::verify(); if(Auth::login($_POST['email']??'',$_POST['password']??''))redirect('/');flash('Email or password was incorrect.','error');redirect('/login'); }
+elseif($path==='/logout' && method_is('POST')) { Csrf::verify(); session_destroy();redirect('/'); }
+elseif($path==='/recipes/new' && method_is('GET')) { Auth::requireUser();View::render('recipes/form',['recipe'=>['title'=>'','summary'=>'','ingredients'=>'','instructions'=>'','notes'=>'','is_public'=>true],'action'=>'/recipes']); }
+elseif($path==='/recipes' && method_is('POST')) { $u=Auth::requireUser();Csrf::verify();$title=trim($_POST['title']??'');$ingredients=trim($_POST['ingredients']??'');$instructions=trim($_POST['instructions']??'');if($title===''||$ingredients===''||$instructions===''){flash('Title, ingredients, and instructions are required.','error');redirect('/recipes/new');}$q=Database::connection()->prepare('INSERT INTO recipes(user_id,title,summary,ingredients,instructions,notes,is_public)VALUES(?,?,?,?,?,?,?) RETURNING id');$q->execute([$u['id'],$title,trim($_POST['summary']??''),$ingredients,$instructions,trim($_POST['notes']??''),isset($_POST['is_public'])]);$id=(int)$q->fetchColumn();save_photos($id);flash('Recipe is fresh from the oven!');redirect('/recipes/'.$id); }
+elseif(preg_match('#^/recipes/(\d+)$#',$path,$m) && method_is('GET')) { $u=Auth::user();$r=recipe((int)$m[1],true);if(!$r['is_public']&&(!$u||(int)$u['id']!==(int)$r['user_id']))abort(404);$q=Database::connection()->prepare('SELECT * FROM recipe_photos WHERE recipe_id=? ORDER BY sort_order,id');$q->execute([$r['id']]);View::render('recipes/show',['recipe'=>$r,'photos'=>$q->fetchAll()]); }
+elseif(preg_match('#^/recipes/(\d+)/edit$#',$path,$m) && method_is('GET')) { $u=Auth::requireUser();$r=recipe((int)$m[1],true);if((int)$u['id']!==(int)$r['user_id'])abort(403);$q=Database::connection()->prepare('SELECT * FROM recipe_photos WHERE recipe_id=? ORDER BY sort_order,id');$q->execute([$r['id']]);View::render('recipes/form',['recipe'=>$r,'photos'=>$q->fetchAll(),'action'=>'/recipes/'.$r['id']]); }
+elseif(preg_match('#^/recipes/(\d+)$#',$path,$m) && method_is('POST')) { $u=Auth::requireUser();Csrf::verify();$r=recipe((int)$m[1],true);if((int)$u['id']!==(int)$r['user_id'])abort(403);$q=Database::connection()->prepare('UPDATE recipes SET title=?,summary=?,ingredients=?,instructions=?,notes=?,is_public=?,updated_at=NOW() WHERE id=?');$q->execute([trim($_POST['title']??''),trim($_POST['summary']??''),trim($_POST['ingredients']??''),trim($_POST['instructions']??''),trim($_POST['notes']??''),isset($_POST['is_public']),$r['id']]);save_photos((int)$r['id']);flash('Recipe updated.');redirect('/recipes/'.$r['id']); }
+elseif(preg_match('#^/recipes/(\d+)/fork$#',$path,$m) && method_is('POST')) { $u=Auth::requireUser();Csrf::verify();$r=recipe((int)$m[1]);$q=Database::connection()->prepare("INSERT INTO recipes(user_id,forked_from_id,title,summary,ingredients,instructions,notes,is_public)VALUES(?,?,?,?,?,?,?,true) RETURNING id");$q->execute([$u['id'],$r['id'],$r['title'].' — my version',$r['summary'],$r['ingredients'],$r['instructions'],$r['notes']]);$id=(int)$q->fetchColumn();$q=Database::connection()->prepare('INSERT INTO recipe_photos(recipe_id,filename,sort_order) SELECT ?,filename,sort_order FROM recipe_photos WHERE recipe_id=?');$q->execute([$id,$r['id']]);flash('Your version is ready to customize.');redirect('/recipes/'.$id.'/edit'); }
+elseif($path==='/admin/users' && method_is('GET')) { $u=Auth::requireAdmin();$users=Database::connection()->query('SELECT id,name,email,role,created_at FROM users ORDER BY created_at')->fetchAll();View::render('admin/users',['users'=>$users,'current'=>$u]); }
+elseif(preg_match('#^/admin/users/(\d+)/role$#',$path,$m)&&method_is('POST')) { $u=Auth::requireAdmin();Csrf::verify();$role=$_POST['role']??'user';if(!in_array($role,['admin','user'],true))abort(422);$target=(int)$m[1];if($target===(int)$u['id'])abort(422,'You cannot change your own role.');$q=Database::connection()->prepare("UPDATE users SET role=? WHERE id=? AND role<>'superadmin'");$q->execute([$role,$target]);flash('User role updated.');redirect('/admin/users'); }
+else abort(404);
+} catch(PDOException $e){ if(Env::get('APP_DEBUG','false')==='true') throw $e; abort(500,'Something went wrong in the kitchen.'); }

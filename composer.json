@@ -1,0 +1,12 @@
+{
+  "name": "bitchin-kitchen/app",
+  "description": "A friendly recipe sharing and remixing application",
+  "type": "project",
+  "require": {
+    "php": "^8.2",
+    "ext-pdo": "*",
+    "ext-fileinfo": "*"
+  },
+  "autoload": { "psr-4": { "App\\": "src/" } },
+  "scripts": { "serve": "php -S 0.0.0.0:7373 -t public" }
+}
