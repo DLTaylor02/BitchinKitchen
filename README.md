@@ -64,3 +64,13 @@ The upload controls in `.env` have distinct purposes: `UPLOAD_MAX_FILE_MB` limit
 - **Superadmin:** created once at installation; protected by a partial unique database index and cannot be demoted in the UI.
 - **Web Admin:** can promote/demote other non-superadmin accounts and use all normal recipe features.
 - **User:** can create, view, search, and fork public recipes; can view and edit only their own private recipes.
+
+## Resetting the superadmin password
+
+If the superadmin password is lost, run the recovery utility directly on the Debian server:
+
+```sh
+sudo php /var/www/bitchinkitchen/bin/reset-superadmin-password.php
+```
+
+The command identifies the sole superadmin and securely prompts for the new password twice without displaying the input. Passwords must contain at least 12 characters. It changes only the superadmin password; the username, role, recipes, and other users are unaffected.
