@@ -3,16 +3,35 @@ set -Eeuo pipefail
 
 PORT="${1:-7373}"
 APP_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-DB_NAME="bitchin_kitchen"
-DB_USER="bitchin"
+ENV_FILE="$APP_DIR/.env"
+read_env() {
+    local key="$1" line value
+    [[ -f "$ENV_FILE" ]] || return 0
+    line="$(grep -m1 -E "^${key}=" "$ENV_FILE" 2>/dev/null || true)"
+    value="${line#*=}"
+    if ((${#value} >= 2)) && [[ "${value:0:1}" == '"' && "${value: -1}" == '"' ]]; then value="${value:1:${#value}-2}"; fi
+    if ((${#value} >= 2)) && [[ "${value:0:1}" == "'" && "${value: -1}" == "'" ]]; then value="${value:1:${#value}-2}"; fi
+    printf '%s' "$value"
+}
+DB_NAME="${DB_NAME:-$(read_env DB_NAME)}"; DB_NAME="${DB_NAME:-bitchin_kitchen}"
+DB_USER="${DB_USER:-$(read_env DB_USER)}"; DB_USER="${DB_USER:-bitchin}"
+DB_HOST="${DB_HOST:-$(read_env DB_HOST)}"; DB_HOST="${DB_HOST:-127.0.0.1}"
+DB_PORT="${DB_PORT:-$(read_env DB_PORT)}"; DB_PORT="${DB_PORT:-5432}"
+DB_PASSWORD="${DB_PASSWORD:-$(read_env DB_PASSWORD)}"
+UPLOAD_MAX_FILE_MB="${UPLOAD_MAX_FILE_MB:-$(read_env UPLOAD_MAX_FILE_MB)}"; UPLOAD_MAX_FILE_MB="${UPLOAD_MAX_FILE_MB:-8}"
+UPLOAD_MAX_REQUEST_MB="${UPLOAD_MAX_REQUEST_MB:-$(read_env UPLOAD_MAX_REQUEST_MB)}"; UPLOAD_MAX_REQUEST_MB="${UPLOAD_MAX_REQUEST_MB:-32}"
 SITE_NAME="bitchin-kitchen"
 SERVER_IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
 SERVER_IP="${SERVER_IP:-localhost}"
-PUBLIC_URL="${APP_URL:-http://$SERVER_IP:$PORT}"
+PUBLIC_URL="${APP_URL:-$(read_env APP_URL)}"; PUBLIC_URL="${PUBLIC_URL:-http://$SERVER_IP:$PORT}"
 
 die() { printf 'Error: %s\n' "$*" >&2; exit 1; }
 [[ $EUID -eq 0 ]] || die "Run this setup as root: sudo ./setup.sh [port]"
 [[ "$PORT" =~ ^[0-9]+$ ]] && (( PORT >= 1 && PORT <= 65535 )) || die "Port must be between 1 and 65535"
+[[ "$DB_USER" =~ ^[a-zA-Z_][a-zA-Z0-9_]*$ ]] || die "DB_USER must be a valid PostgreSQL identifier"
+[[ "$DB_NAME" =~ ^[a-zA-Z_][a-zA-Z0-9_]*$ ]] || die "DB_NAME must be a valid PostgreSQL identifier"
+[[ "$UPLOAD_MAX_FILE_MB" =~ ^[0-9]+$ ]] && (( UPLOAD_MAX_FILE_MB > 0 )) || die "UPLOAD_MAX_FILE_MB must be a positive integer"
+[[ "$UPLOAD_MAX_REQUEST_MB" =~ ^[0-9]+$ ]] && (( UPLOAD_MAX_REQUEST_MB >= UPLOAD_MAX_FILE_MB )) || die "UPLOAD_MAX_REQUEST_MB must be at least UPLOAD_MAX_FILE_MB"
 [[ -f /etc/debian_version ]] || die "This installer supports Debian-based systems only"
 command -v apt-get >/dev/null 2>&1 || die "apt-get was not found"
 
@@ -35,38 +54,52 @@ php -r 'exit(version_compare(PHP_VERSION, "8.2.0", ">=") ? 0 : 1);' || die "PHP 
 php -m | grep -qi '^pdo_pgsql$' || die "The PHP PDO PostgreSQL extension is not enabled"
 systemctl enable --now postgresql
 
-DB_PASSWORD="$(openssl rand -hex 24)"
-if runuser -u postgres -- psql -tAc "SELECT 1 FROM pg_roles WHERE rolname='$DB_USER'" | grep -q 1; then
-    runuser -u postgres -- psql -v ON_ERROR_STOP=1 -c "ALTER ROLE $DB_USER WITH LOGIN PASSWORD '$DB_PASSWORD';"
-else
-    runuser -u postgres -- psql -v ON_ERROR_STOP=1 -c "CREATE ROLE $DB_USER LOGIN PASSWORD '$DB_PASSWORD';"
+# Reuse PostgreSQL safely: never change an existing role's password or take
+# ownership of an existing database. Custom DB_* values support shared hosts.
+ROLE_EXISTS="$(runuser -u postgres -- psql -tAc "SELECT 1 FROM pg_roles WHERE rolname='$DB_USER'")"
+DATABASE_EXISTS="$(runuser -u postgres -- psql -tAc "SELECT 1 FROM pg_database WHERE datname='$DB_NAME'")"
+if [[ "$DATABASE_EXISTS" == "1" && "$ROLE_EXISTS" != "1" ]]; then
+    die "Database '$DB_NAME' already exists and was not modified. Choose another DB_NAME or supply its existing DB_USER and DB_PASSWORD."
 fi
-if ! runuser -u postgres -- psql -tAc "SELECT 1 FROM pg_database WHERE datname='$DB_NAME'" | grep -q 1; then
+if [[ "$ROLE_EXISTS" == "1" ]]; then
+    [[ -n "${DB_PASSWORD:-}" ]] || die "PostgreSQL role '$DB_USER' already exists. Supply its DB_PASSWORD or choose another DB_USER. No existing password was changed."
+else
+    DB_PASSWORD="${DB_PASSWORD:-$(openssl rand -hex 24)}"
+    runuser -u postgres -- psql -v ON_ERROR_STOP=1 -v role_name="$DB_USER" -v role_password="$DB_PASSWORD" <<'SQL'
+SELECT format('CREATE ROLE %I LOGIN PASSWORD %L', :'role_name', :'role_password') \gexec
+SQL
+fi
+if [[ "$DATABASE_EXISTS" != "1" ]]; then
     runuser -u postgres -- createdb --owner="$DB_USER" "$DB_NAME"
 fi
 
-if [[ ! -f "$APP_DIR/.env" ]]; then
-    cp "$APP_DIR/.env.example" "$APP_DIR/.env"
+if [[ ! -f "$ENV_FILE" ]]; then
+    cp "$APP_DIR/.env.example" "$ENV_FILE"
 fi
-APP_KEY="$(openssl rand -hex 32)"
+sed -i -e '/^APP_ENV=/d' -e '/^APP_KEY=/d' -e '/^UPLOAD_MAX_MB=/d' "$ENV_FILE"
+grep -q '^UPLOAD_MAX_FILE_MB=' "$ENV_FILE" || printf 'UPLOAD_MAX_FILE_MB=%s\n' "$UPLOAD_MAX_FILE_MB" >> "$ENV_FILE"
+grep -q '^UPLOAD_MAX_REQUEST_MB=' "$ENV_FILE" || printf 'UPLOAD_MAX_REQUEST_MB=%s\n' "$UPLOAD_MAX_REQUEST_MB" >> "$ENV_FILE"
+SED_DB_PASSWORD="$(printf '%s' "$DB_PASSWORD" | sed 's/[&|\\]/\\&/g')"
 sed -i \
     -e "s|^APP_URL=.*|APP_URL=$PUBLIC_URL|" \
-    -e "s|^APP_KEY=.*|APP_KEY=$APP_KEY|" \
-    -e "s|^DB_HOST=.*|DB_HOST=127.0.0.1|" \
+    -e "s|^DB_HOST=.*|DB_HOST=$DB_HOST|" \
+    -e "s|^DB_PORT=.*|DB_PORT=$DB_PORT|" \
     -e "s|^DB_NAME=.*|DB_NAME=$DB_NAME|" \
     -e "s|^DB_USER=.*|DB_USER=$DB_USER|" \
-    -e "s|^DB_PASSWORD=.*|DB_PASSWORD=$DB_PASSWORD|" \
-    "$APP_DIR/.env"
-chmod 640 "$APP_DIR/.env"
-chown root:www-data "$APP_DIR/.env"
+    -e "s|^DB_PASSWORD=.*|DB_PASSWORD=$SED_DB_PASSWORD|" \
+    -e "s|^UPLOAD_MAX_FILE_MB=.*|UPLOAD_MAX_FILE_MB=$UPLOAD_MAX_FILE_MB|" \
+    -e "s|^UPLOAD_MAX_REQUEST_MB=.*|UPLOAD_MAX_REQUEST_MB=$UPLOAD_MAX_REQUEST_MB|" \
+    "$ENV_FILE"
+chmod 640 "$ENV_FILE"
+chown root:www-data "$ENV_FILE"
 
 cd "$APP_DIR"
 COMPOSER_ALLOW_SUPERUSER=1 composer install --no-dev --optimize-autoloader --no-interaction
 install -d -o www-data -g www-data -m 775 "$APP_DIR/public/uploads" "$APP_DIR/runtime"
 
 export PGPASSWORD="$DB_PASSWORD"
-psql -h 127.0.0.1 -U "$DB_USER" -d "$DB_NAME" -v ON_ERROR_STOP=1 -f "$APP_DIR/database/schema.sql"
-SUPERADMIN_COUNT="$(psql -h 127.0.0.1 -U "$DB_USER" -d "$DB_NAME" -tAc "SELECT count(*) FROM users WHERE role='superadmin'")"
+psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -v ON_ERROR_STOP=1 -f "$APP_DIR/database/schema.sql" || die "Could not initialize '$DB_NAME' using '$DB_USER'. Existing PostgreSQL resources were not changed."
+SUPERADMIN_COUNT="$(psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -tAc "SELECT count(*) FROM users WHERE role='superadmin'")"
 if [[ "$SUPERADMIN_COUNT" == "0" ]]; then
     if [[ -z "${SUPERADMIN_NAME:-}" || -z "${SUPERADMIN_PASSWORD:-}" ]]; then
         [[ -t 0 ]] || die "Set SUPERADMIN_NAME and SUPERADMIN_PASSWORD for non-interactive setup"
@@ -80,7 +113,7 @@ if [[ "$SUPERADMIN_COUNT" == "0" ]]; then
     ((${#SUPERADMIN_NAME} >= 2 && ${#SUPERADMIN_NAME} <= 100)) || die "Superadmin username must contain 2–100 characters"
     ((${#SUPERADMIN_PASSWORD} >= 12)) || die "Superadmin password must contain at least 12 characters"
     PASSWORD_HASH="$(SETUP_PASSWORD="$SUPERADMIN_PASSWORD" php -r 'echo password_hash(getenv("SETUP_PASSWORD"), PASSWORD_DEFAULT);')"
-    psql -h 127.0.0.1 -U "$DB_USER" -d "$DB_NAME" -v ON_ERROR_STOP=1 \
+    psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -v ON_ERROR_STOP=1 \
         -v admin_name="$SUPERADMIN_NAME" -v password_hash="$PASSWORD_HASH" <<'SQL'
 INSERT INTO users (name, password_hash, role)
 VALUES (:'admin_name', :'password_hash', 'superadmin');
@@ -93,9 +126,13 @@ unset PGPASSWORD SUPERADMIN_PASSWORD PASSWORD_HASH
 
 FPM_SOCKET="$(find /run/php -maxdepth 1 -type s -name 'php*-fpm.sock' -print -quit 2>/dev/null || true)"
 [[ -n "$FPM_SOCKET" ]] || die "No PHP-FPM socket was found under /run/php"
+PHP_FPM_VERSION="$(php -r 'echo PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION;')"
+PHP_UPLOAD_CONFIG="/etc/php/$PHP_FPM_VERSION/fpm/conf.d/99-bitchin-kitchen.ini"
+printf 'upload_max_filesize = %sM\npost_max_size = %sM\nmax_file_uploads = 20\n' "$UPLOAD_MAX_FILE_MB" "$UPLOAD_MAX_REQUEST_MB" > "$PHP_UPLOAD_CONFIG"
 sed \
     -e "s|{{PORT}}|$PORT|g" \
     -e "s|{{PROJECT_ROOT}}|$APP_DIR|g" \
+    -e "s|{{UPLOAD_MAX_REQUEST_MB}}|$UPLOAD_MAX_REQUEST_MB|g" \
     -e "s|fastcgi_pass 127.0.0.1:9000;|fastcgi_pass unix:$FPM_SOCKET;|" \
     "$APP_DIR/config/nginx.conf.example" > "/etc/nginx/sites-available/$SITE_NAME"
 ln -sfn "/etc/nginx/sites-available/$SITE_NAME" "/etc/nginx/sites-enabled/$SITE_NAME"

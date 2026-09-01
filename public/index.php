@@ -18,7 +18,7 @@ function recipe(int $id, bool $includePrivate=false): array {
 }
 function save_photos(int $recipeId): void {
     if(empty($_FILES['photos']['name'][0])) return;
-    $max=(int)Env::get('UPLOAD_MAX_MB',8)*1024*1024; $finfo=new finfo(FILEINFO_MIME_TYPE); $allowed=['image/jpeg'=>'jpg','image/png'=>'png','image/webp'=>'webp','image/gif'=>'gif'];
+    $max=(int)Env::get('UPLOAD_MAX_FILE_MB',8)*1024*1024; $finfo=new finfo(FILEINFO_MIME_TYPE); $allowed=['image/jpeg'=>'jpg','image/png'=>'png','image/webp'=>'webp','image/gif'=>'gif'];
     $order=(int)Database::connection()->query('SELECT COALESCE(MAX(sort_order),-1)+1 FROM recipe_photos WHERE recipe_id='.(int)$recipeId)->fetchColumn();
     foreach($_FILES['photos']['tmp_name'] as $i=>$tmp){ if($_FILES['photos']['error'][$i]!==UPLOAD_ERR_OK) continue; if($_FILES['photos']['size'][$i]>$max) continue; $mime=$finfo->file($tmp); if(!isset($allowed[$mime])) continue; $name=bin2hex(random_bytes(16)).'.'.$allowed[$mime]; if(move_uploaded_file($tmp,__DIR__.'/uploads/'.$name)){ $q=Database::connection()->prepare('INSERT INTO recipe_photos(recipe_id,filename,sort_order) VALUES(?,?,?)'); $q->execute([$recipeId,$name,$order++]); } }
 }
@@ -50,4 +50,4 @@ elseif(preg_match('#^/recipes/(\d+)/fork$#',$path,$m) && method_is('POST')) { $u
 elseif($path==='/admin/users' && method_is('GET')) { $u=Auth::requireAdmin();$users=Database::connection()->query('SELECT id,name,role,created_at FROM users ORDER BY created_at')->fetchAll();View::render('admin/users',['users'=>$users,'current'=>$u]); }
 elseif(preg_match('#^/admin/users/(\d+)/role$#',$path,$m)&&method_is('POST')) { $u=Auth::requireAdmin();Csrf::verify();$role=$_POST['role']??'user';if(!in_array($role,['admin','user'],true))abort(422);$target=(int)$m[1];if($target===(int)$u['id'])abort(422,'You cannot change your own role.');$q=Database::connection()->prepare("UPDATE users SET role=? WHERE id=? AND role<>'superadmin'");$q->execute([$role,$target]);flash('User role updated.');redirect('/admin/users'); }
 else abort(404);
-} catch(PDOException $e){ if(Env::get('APP_DEBUG','false')==='true') throw $e; abort(500,'Something went wrong in the kitchen.'); }
+} catch(PDOException $e){ if(Env::bool('APP_DEBUG')) throw $e; abort(500,'Something went wrong in the kitchen.'); }

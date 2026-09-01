@@ -11,4 +11,5 @@ final class Env {
         }
     }
     public static function get(string $key, mixed $default = null): mixed { $v=getenv($key); return $v === false ? $default : $v; }
+    public static function bool(string $key, bool $default=false): bool { $v=self::get($key); return $v===null?$default:filter_var($v,FILTER_VALIDATE_BOOL); }
 }
