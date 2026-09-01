@@ -2,12 +2,19 @@
 set -Eeuo pipefail
 
 PORT="${1:-7373}"
-APP_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-ENV_FILE="$APP_DIR/.env"
+SOURCE_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+APP_DIR="/var/www/bitchinkitchen"
+if [[ -f "$APP_DIR/.env" ]]; then
+    CONFIG_ENV_FILE="$APP_DIR/.env"
+elif [[ -f "$SOURCE_DIR/.env" ]]; then
+    CONFIG_ENV_FILE="$SOURCE_DIR/.env"
+else
+    CONFIG_ENV_FILE="$SOURCE_DIR/.env.example"
+fi
 read_env() {
     local key="$1" line value
-    [[ -f "$ENV_FILE" ]] || return 0
-    line="$(grep -m1 -E "^${key}=" "$ENV_FILE" 2>/dev/null || true)"
+    [[ -f "$CONFIG_ENV_FILE" ]] || return 0
+    line="$(grep -m1 -E "^${key}=" "$CONFIG_ENV_FILE" 2>/dev/null || true)"
     value="${line#*=}"
     if ((${#value} >= 2)) && [[ "${value:0:1}" == '"' && "${value: -1}" == '"' ]]; then value="${value:1:${#value}-2}"; fi
     if ((${#value} >= 2)) && [[ "${value:0:1}" == "'" && "${value: -1}" == "'" ]]; then value="${value:1:${#value}-2}"; fi
@@ -36,7 +43,7 @@ die() { printf 'Error: %s\n' "$*" >&2; exit 1; }
 command -v apt-get >/dev/null 2>&1 || die "apt-get was not found"
 
 export DEBIAN_FRONTEND=noninteractive
-packages=(nginx postgresql postgresql-client php-fpm php-cli php-pgsql php-mbstring php-xml php-curl php-zip php-intl php-gd composer openssl ca-certificates)
+packages=(nginx postgresql postgresql-client php-fpm php-cli php-pgsql php-mbstring php-xml php-curl php-zip php-intl php-gd composer openssl ca-certificates rsync)
 missing=()
 for package in "${packages[@]}"; do
     dpkg-query -W -f='${Status}' "$package" 2>/dev/null | grep -q 'install ok installed' || missing+=("$package")
@@ -73,8 +80,20 @@ if [[ "$DATABASE_EXISTS" != "1" ]]; then
     runuser -u postgres -- createdb --owner="$DB_USER" "$DB_NAME"
 fi
 
+install -d -o root -g www-data -m 750 "$APP_DIR"
+rsync -a --delete \
+    --exclude='.git/' \
+    --exclude='.env' \
+    --exclude='runtime/' \
+    --exclude='public/uploads/' \
+    "$SOURCE_DIR/" "$APP_DIR/"
+ENV_FILE="$APP_DIR/.env"
 if [[ ! -f "$ENV_FILE" ]]; then
-    cp "$APP_DIR/.env.example" "$ENV_FILE"
+    if [[ -f "$SOURCE_DIR/.env" ]]; then
+        install -o root -g www-data -m 640 "$SOURCE_DIR/.env" "$ENV_FILE"
+    else
+        install -o root -g www-data -m 640 "$SOURCE_DIR/.env.example" "$ENV_FILE"
+    fi
 fi
 sed -i -e '/^APP_ENV=/d' -e '/^APP_KEY=/d' -e '/^UPLOAD_MAX_MB=/d' "$ENV_FILE"
 grep -q '^UPLOAD_MAX_FILE_MB=' "$ENV_FILE" || printf 'UPLOAD_MAX_FILE_MB=%s\n' "$UPLOAD_MAX_FILE_MB" >> "$ENV_FILE"
@@ -96,6 +115,10 @@ chown root:www-data "$ENV_FILE"
 cd "$APP_DIR"
 COMPOSER_ALLOW_SUPERUSER=1 composer install --no-dev --optimize-autoloader --no-interaction
 install -d -o www-data -g www-data -m 775 "$APP_DIR/public/uploads" "$APP_DIR/runtime"
+chown -R root:www-data "$APP_DIR/public" "$APP_DIR/src" "$APP_DIR/views" "$APP_DIR/vendor"
+chmod -R g+rX,o-rwx "$APP_DIR/public" "$APP_DIR/src" "$APP_DIR/views" "$APP_DIR/vendor"
+chown -R www-data:www-data "$APP_DIR/public/uploads" "$APP_DIR/runtime"
+chmod -R u+rwX,g+rwX,o-rwx "$APP_DIR/public/uploads" "$APP_DIR/runtime"
 
 export PGPASSWORD="$DB_PASSWORD"
 psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -v ON_ERROR_STOP=1 -f "$APP_DIR/database/schema.sql" || die "Could not initialize '$DB_NAME' using '$DB_USER'. Existing PostgreSQL resources were not changed."
