@@ -7,6 +7,8 @@ A mobile-first PHP recipe community for Debian where cooks publish recipes, keep
 - Public recipe discovery with fast PostgreSQL full-text search
 - Private recipes visible only to their owners
 - Ownership-enforced editing and one-click "Make my version" recipe forking
+- Unsaved fork drafts that are created only when the user clicks Save
+- Recipe deletion by owners, with global deletion available to Web Admins and the superadmin
 - Multi-photo galleries; the first upload automatically becomes the search thumbnail
 - Adaptive (default), light, and dark baking-inspired themes
 - Three roles: one immutable superadmin, Web Admins who manage user roles, and regular users
