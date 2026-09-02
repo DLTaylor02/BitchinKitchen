@@ -41,8 +41,8 @@ chmod +x setup.sh
 sudo ./setup.sh
 ```
 
-The default port is 7373. Pass another port as the first argument if needed:
-
+The installer prompts for a custom listener port and displays `7373` as the default. Press Enter to accept it, or specify a new port.
+You can also pass a custom listener port as the first argument for unattended or scripted installation:
 ```sh
 sudo ./setup.sh 8088
 ```

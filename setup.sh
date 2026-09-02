@@ -1,9 +1,19 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-PORT="${1:-7373}"
+DEFAULT_PORT=7373
+PORT="${1:-}"
 SOURCE_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 APP_DIR="/var/www/bitchinkitchen"
+die() { printf 'Error: %s\n' "$*" >&2; exit 1; }
+[[ $EUID -eq 0 ]] || die "Run this setup as root: sudo ./setup.sh [port]"
+if [[ -z "$PORT" ]]; then
+    if [[ -t 0 ]]; then
+        read -r -p "Application port [$DEFAULT_PORT]: " PORT
+    fi
+    PORT="${PORT:-$DEFAULT_PORT}"
+fi
+[[ "$PORT" =~ ^[0-9]+$ ]] && (( PORT >= 1 && PORT <= 65535 )) || die "Port must be between 1 and 65535"
 if [[ -f "$APP_DIR/.env" ]]; then
     CONFIG_ENV_FILE="$APP_DIR/.env"
 elif [[ -f "$SOURCE_DIR/.env" ]]; then
@@ -32,9 +42,6 @@ SERVER_IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
 SERVER_IP="${SERVER_IP:-localhost}"
 PUBLIC_URL="${APP_URL:-$(read_env APP_URL)}"; PUBLIC_URL="${PUBLIC_URL:-http://$SERVER_IP:$PORT}"
 
-die() { printf 'Error: %s\n' "$*" >&2; exit 1; }
-[[ $EUID -eq 0 ]] || die "Run this setup as root: sudo ./setup.sh [port]"
-[[ "$PORT" =~ ^[0-9]+$ ]] && (( PORT >= 1 && PORT <= 65535 )) || die "Port must be between 1 and 65535"
 [[ "$DB_USER" =~ ^[a-zA-Z_][a-zA-Z0-9_]*$ ]] || die "DB_USER must be a valid PostgreSQL identifier"
 [[ "$DB_NAME" =~ ^[a-zA-Z_][a-zA-Z0-9_]*$ ]] || die "DB_NAME must be a valid PostgreSQL identifier"
 [[ "$UPLOAD_MAX_FILE_MB" =~ ^[0-9]+$ ]] && (( UPLOAD_MAX_FILE_MB > 0 )) || die "UPLOAD_MAX_FILE_MB must be a positive integer"
