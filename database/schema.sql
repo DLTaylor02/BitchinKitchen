@@ -25,6 +25,9 @@ CREATE TABLE IF NOT EXISTS recipes (
   user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   forked_from_id BIGINT REFERENCES recipes(id) ON DELETE SET NULL,
   cuisine_id BIGINT REFERENCES cuisines(id) ON DELETE SET NULL,
+  source_url TEXT,
+  source_name VARCHAR(120),
+  source_author VARCHAR(180),
   title VARCHAR(180) NOT NULL,
   summary TEXT NOT NULL DEFAULT '',
   ingredients TEXT NOT NULL,
@@ -40,6 +43,9 @@ CREATE TABLE IF NOT EXISTS recipes (
   ) STORED
 );
 ALTER TABLE recipes ADD COLUMN IF NOT EXISTS cuisine_id BIGINT REFERENCES cuisines(id) ON DELETE SET NULL;
+ALTER TABLE recipes ADD COLUMN IF NOT EXISTS source_url TEXT;
+ALTER TABLE recipes ADD COLUMN IF NOT EXISTS source_name VARCHAR(120);
+ALTER TABLE recipes ADD COLUMN IF NOT EXISTS source_author VARCHAR(180);
 CREATE INDEX IF NOT EXISTS recipes_search_idx ON recipes USING GIN(search_vector);
 CREATE INDEX IF NOT EXISTS recipes_public_updated_idx ON recipes(is_public, updated_at DESC);
 CREATE TABLE IF NOT EXISTS recipe_tags (
