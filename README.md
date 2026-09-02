@@ -14,6 +14,7 @@ A mobile-first PHP recipe community for Debian where cooks publish recipes, keep
 - Ownership-enforced editing and one-click "Make my version" recipe forking
 - Multi-photo galleries; the first upload automatically becomes the search thumbnail
 - Adaptive (default), light, and dark baking-inspired themes
+- Cooking calculators for volume, weight, oven temperature, and recipe scaling
 - Three roles: one immutable superadmin, Web Admins who manage user roles, and regular users
 - Superadmin-controlled global inactivity timeout, including a no-timeout option
 - CSRF protection, secure password hashing, parameterized SQL, MIME-checked uploads
