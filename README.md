@@ -9,6 +9,7 @@ A mobile-first PHP recipe community for Debian where cooks publish recipes, keep
 ## Features
 
 - Public recipe discovery with fast PostgreSQL full-text search
+- Cuisine and multi-tag classification with combined filtering
 - Private recipes visible only to their owners
 - Ownership-enforced editing and one-click "Make my version" recipe forking
 - Multi-photo galleries; the first upload automatically becomes the search thumbnail
@@ -63,7 +64,7 @@ The upload controls in `.env` have distinct purposes: `UPLOAD_MAX_FILE_MB` limit
 ## Roles and privacy
 
 - **Superadmin:** created once at installation; protected by a partial unique database index and cannot be demoted in the UI.
-- **Web Admin:** can promote/demote other non-superadmin accounts and use all normal recipe features.
+- **Web Admin:** can promote/demote other non-superadmin accounts, manage cuisines and tags, and use all normal recipe features.
 - **User:** can create, view, search, and fork public recipes; can view and edit only their own private recipes.
 
 ## Resetting the superadmin password
