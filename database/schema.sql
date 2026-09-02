@@ -19,7 +19,7 @@ CREATE TABLE IF NOT EXISTS tags (
   id BIGSERIAL PRIMARY KEY, name VARCHAR(80) NOT NULL UNIQUE, is_active BOOLEAN NOT NULL DEFAULT TRUE
 );
 INSERT INTO cuisines(name) VALUES ('American'),('Caribbean'),('Chinese'),('French'),('Greek'),('Indian'),('Italian'),('Japanese'),('Korean'),('Mediterranean'),('Mexican'),('Middle Eastern'),('Thai'),('Vietnamese'),('Other') ON CONFLICT(name) DO NOTHING;
-INSERT INTO tags(name) VALUES ('Baking'),('Dairy-free'),('Gluten-free'),('High protein'),('Kid-friendly'),('Low carb'),('Meal prep'),('One-pot'),('Quick'),('Spicy'),('Vegan'),('Vegetarian') ON CONFLICT(name) DO NOTHING;
+INSERT INTO tags(name) VALUES ('Air fryer'),('Baked'),('Braised'),('Broiled'),('Dairy-free'),('Deep-fried'),('Gluten-free'),('Grilled'),('High protein'),('Instant Pot'),('Kid-friendly'),('Low carb'),('Meal prep'),('No-cook / No-bake'),('One-pot'),('Pan-fried'),('Pressure cooked'),('Quick'),('Roasted'),('Sautéed'),('Slow cooker'),('Smoked'),('Sous vide'),('Spicy'),('Steamed'),('Stir-fried'),('Vegan'),('Vegetarian') ON CONFLICT(name) DO NOTHING;
 CREATE TABLE IF NOT EXISTS recipes (
   id BIGSERIAL PRIMARY KEY,
   user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -54,6 +54,11 @@ CREATE TABLE IF NOT EXISTS recipe_tags (
   PRIMARY KEY(recipe_id,tag_id)
 );
 CREATE INDEX IF NOT EXISTS recipe_tags_tag_idx ON recipe_tags(tag_id,recipe_id);
+INSERT INTO recipe_tags(recipe_id,tag_id)
+SELECT rt.recipe_id,replacement.id FROM recipe_tags rt JOIN tags old ON old.id=rt.tag_id CROSS JOIN tags replacement WHERE old.name='Baking' AND replacement.name='Baked'
+ON CONFLICT DO NOTHING;
+DELETE FROM recipe_tags WHERE tag_id IN (SELECT id FROM tags WHERE name='Baking');
+DELETE FROM tags WHERE name='Baking';
 CREATE TABLE IF NOT EXISTS recipe_photos (
   id BIGSERIAL PRIMARY KEY,
   recipe_id BIGINT NOT NULL REFERENCES recipes(id) ON DELETE CASCADE,
