@@ -6,3 +6,4 @@
 .thumb>.favorite-form{position:absolute;inset:10px 10px auto auto;z-index:3;width:42px;height:42px;margin:0;transform:none}
 .thumb>.favorite-form>.favorite-button{position:absolute;inset:0;display:flex;width:42px;height:42px;margin:0;padding:0}
 .gallery{display:flex;max-height:none;overflow-x:auto;overflow-y:hidden;align-items:center;gap:10px;padding:10px;background:var(--surface2);scroll-snap-type:x proximity;scrollbar-width:thin}.gallery img,.gallery .featured{display:block;flex:0 0 auto;grid-row:auto;width:auto;max-width:min(82vw,720px);height:clamp(280px,40vw,460px);min-width:0;min-height:0;object-fit:contain;border-radius:12px;scroll-snap-align:center}@media(max-width:480px){.gallery img,.gallery .featured{width:auto;min-width:0;max-width:85vw;height:300px}}
+@media(max-width:480px){.brand{max-width:none;overflow:visible;text-overflow:clip;flex-shrink:1;font-size:clamp(.72rem,3.7vw,1rem);white-space:nowrap}.brand img{display:none}}
