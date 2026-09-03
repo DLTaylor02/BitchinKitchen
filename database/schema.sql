@@ -66,3 +66,10 @@ CREATE TABLE IF NOT EXISTS recipe_photos (
   sort_order INT NOT NULL DEFAULT 0,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+CREATE TABLE IF NOT EXISTS user_favorites (
+  user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  recipe_id BIGINT NOT NULL REFERENCES recipes(id) ON DELETE CASCADE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY(user_id,recipe_id)
+);
+CREATE INDEX IF NOT EXISTS user_favorites_recipe_idx ON user_favorites(recipe_id);

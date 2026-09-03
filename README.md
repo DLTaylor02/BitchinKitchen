@@ -13,6 +13,9 @@ A mobile-first PHP recipe community for Debian where cooks publish recipes, keep
 - Private recipes visible only to their owners
 - Ownership-enforced editing and one-click "Make my version" recipe forking
 - Multi-photo galleries; the first upload automatically becomes the search thumbnail
+- Per-user recipe favorites with a dedicated Favorites page
+- Superadmin-customizable brand icon
+- Automatic photo resizing to a maximum of 1000×1000 pixels and optimized image encoding
 - Adaptive (default), light, and dark baking-inspired themes
 - Cooking calculators for volume, weight, oven temperature, and recipe scaling
 - Three roles: one immutable superadmin, Web Admins who manage user roles, and regular users
