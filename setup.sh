@@ -134,14 +134,14 @@ if [[ "$SUPERADMIN_COUNT" == "0" ]]; then
     if [[ -z "${SUPERADMIN_NAME:-}" || -z "${SUPERADMIN_PASSWORD:-}" ]]; then
         [[ -t 0 ]] || die "Set SUPERADMIN_NAME and SUPERADMIN_PASSWORD for non-interactive setup"
         read -r -p "Superadmin username: " SUPERADMIN_NAME
-        read -r -s -p "Superadmin password (12+ characters): " SUPERADMIN_PASSWORD
+        read -r -s -p "Superadmin password: " SUPERADMIN_PASSWORD
         printf '\n'
         read -r -s -p "Confirm password: " password_confirmation
         printf '\n'
         [[ "$SUPERADMIN_PASSWORD" == "$password_confirmation" ]] || die "Passwords do not match"
     fi
     ((${#SUPERADMIN_NAME} >= 2 && ${#SUPERADMIN_NAME} <= 100)) || die "Superadmin username must contain 2–100 characters"
-    ((${#SUPERADMIN_PASSWORD} >= 12)) || die "Superadmin password must contain at least 12 characters"
+    [[ -n "$SUPERADMIN_PASSWORD" ]] || die "Superadmin password cannot be empty"
     PASSWORD_HASH="$(SETUP_PASSWORD="$SUPERADMIN_PASSWORD" php -r 'echo password_hash(getenv("SETUP_PASSWORD"), PASSWORD_DEFAULT);')"
     psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -v ON_ERROR_STOP=1 \
         -v admin_name="$SUPERADMIN_NAME" -v password_hash="$PASSWORD_HASH" <<'SQL'

@@ -35,8 +35,8 @@ try {
     if (!$superadmin) throw new RuntimeException('No superadmin account exists. Run setup.sh first.');
 
     fwrite(STDOUT, "Resetting password for superadmin: {$superadmin['name']}\n");
-    $password = secretPrompt('New password (12+ characters): ');
-    if (strlen($password) < 12) throw new RuntimeException('The password must contain at least 12 characters.');
+    $password = secretPrompt('New password: ');
+    if ($password === '') throw new RuntimeException('The password cannot be empty.');
     $confirmation = secretPrompt('Confirm new password: ');
     if (!hash_equals($password, $confirmation)) throw new RuntimeException('The passwords do not match.');
 

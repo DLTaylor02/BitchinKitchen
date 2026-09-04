@@ -2,6 +2,14 @@ CREATE TABLE IF NOT EXISTS settings (
   key VARCHAR(80) PRIMARY KEY, value TEXT NOT NULL
 );
 INSERT INTO settings (key,value) VALUES ('session_timeout_minutes','24') ON CONFLICT (key) DO NOTHING;
+INSERT INTO settings (key,value) VALUES
+  ('login_max_attempts','5'),
+  ('login_window_minutes','15'),
+  ('login_lockout_minutes','15'),
+  ('password_min_length','12'),
+  ('password_min_strength','strong'),
+  ('breach_check_enabled','true')
+ON CONFLICT (key) DO NOTHING;
 CREATE TABLE IF NOT EXISTS users (
   id BIGSERIAL PRIMARY KEY,
   name VARCHAR(100) NOT NULL,
@@ -12,6 +20,15 @@ CREATE TABLE IF NOT EXISTS users (
 ALTER TABLE users DROP COLUMN IF EXISTS email;
 CREATE UNIQUE INDEX IF NOT EXISTS users_name_unique ON users (lower(name));
 CREATE UNIQUE INDEX IF NOT EXISTS one_superadmin ON users ((role)) WHERE role = 'superadmin';
+CREATE TABLE IF NOT EXISTS login_throttles (
+  username VARCHAR(100) NOT NULL,
+  ip_address VARCHAR(45) NOT NULL,
+  failed_attempts INT NOT NULL DEFAULT 0,
+  window_started TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  locked_until TIMESTAMPTZ,
+  PRIMARY KEY(username,ip_address)
+);
+CREATE INDEX IF NOT EXISTS login_throttles_expiry_idx ON login_throttles(locked_until);
 CREATE TABLE IF NOT EXISTS cuisines (
   id BIGSERIAL PRIMARY KEY, name VARCHAR(80) NOT NULL UNIQUE, is_active BOOLEAN NOT NULL DEFAULT TRUE
 );
