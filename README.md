@@ -20,6 +20,7 @@ A mobile-first PHP recipe community for Debian where cooks publish recipes, keep
 - Cooking calculators for volume, weight, oven temperature, and recipe scaling
 - Three roles: one immutable superadmin, Web Admins who manage user roles, and regular users
 - Superadmin-controlled global inactivity timeout, including a no-timeout option
+- Configurable login throttling, password strength rules, and compromised-password screening
 - CSRF protection, secure password hashing, parameterized SQL, MIME-checked uploads
 - Native PHP/PostgreSQL/NGINX deployment that does not replace existing NGINX applications
 
@@ -79,7 +80,7 @@ If the superadmin password is lost, run the recovery utility directly on the Deb
 sudo php /var/www/bitchinkitchen/bin/reset-superadmin-password.php
 ```
 
-The command identifies the sole superadmin and securely prompts for the new password twice without displaying the input. Passwords must contain at least 12 characters. It changes only the superadmin password; the username, role, recipes, and other users are unaffected.
+The command identifies the sole superadmin and securely prompts for the new password twice without displaying the input. The superadmin is exempt from configurable password rules; the operator is responsible for choosing a suitably strong password. The command changes only the superadmin password; the username, role, recipes, and other users are unaffected.
 
 ## Session timeout
 
@@ -89,6 +90,27 @@ The default inactivity timeout is 24 minutes, matching the application's previou
 - Enter `0` to disable inactivity expiration.
 
 Web Admins and regular users cannot view or change this setting. Existing sessions begin using a changed value on their next request.
+
+## Login and password security
+
+The superadmin can configure login and password protection from **Settings**:
+
+- Failed attempts allowed, the measurement window, and temporary lockout duration
+- Minimum password length from 8 to 128 characters
+- Basic, standard, or strong password composition requirements
+- Privacy-preserving compromised-password screening through the free Pwned Passwords range service
+
+Regular users and Web Admins must satisfy the configured password policy when their accounts are created or their passwords are changed. The strength indicator provides immediate guidance, while the server remains authoritative. Strong mode requires uppercase and lowercase letters, a number, and a symbol. The superadmin is exempt from password policy and breach screening, but login rate limiting protects every account.
+
+Only the first five characters of a password's SHA-1 hash are sent for compromised-password screening; the complete password and hash remain on the server. If the screening service is temporarily unavailable, the password is accepted and the administrator receives an informational notice.
+
+By default, rate limiting uses the direct client address and ignores forwarded headers. When a trusted reverse proxy sits in front of the application, set `TRUSTED_PROXY_CIDRS` in the deployed `.env` to a comma-separated list containing only that proxy's IP addresses or CIDR ranges. For example:
+
+```env
+TRUSTED_PROXY_CIDRS=127.0.0.1/32,::1/128
+```
+
+Forwarded client addresses are honored only when the immediate connection comes from one of those trusted networks.
 
 ## License
 

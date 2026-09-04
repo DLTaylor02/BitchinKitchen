@@ -2,7 +2,7 @@
 
 <section class="panel admin-create"><h2>Create user</h2><form method="post" action="/admin/users" class="admin-create-form"><?=csrf()?>
 <label>Username<input name="name" minlength="2" maxlength="100" required autocomplete="off"></label>
-<label>Initial password<input type="password" name="password" minlength="8" required autocomplete="new-password"></label>
+<label>Initial password<input type="password" name="password" minlength="<?=$passwordPolicy['min_length']?>" required autocomplete="new-password" data-password-meter data-min-length="<?=$passwordPolicy['min_length']?>" data-min-strength="<?=e($passwordPolicy['strength'])?>"></label>
 <label>Role<select name="role"><option value="user">User</option><option value="admin">Web Admin</option></select></label>
 <button>Create user</button></form></section>
 
@@ -12,5 +12,5 @@
 <?php if($managed['role']==='superadmin'):?><span class="badge">Superadmin</span>
 <?php elseif((int)$managed['id']===(int)$current['id']):?><span class="badge"><?=e($managed['role'])?></span>
 <?php else:?><form method="post" action="/admin/users/<?=$managed['id']?>/role" class="inline"><?=csrf()?><select name="role" aria-label="Role for <?=e($managed['name'])?>"><option value="user" <?=$managed['role']==='user'?'selected':''?>>User</option><option value="admin" <?=$managed['role']==='admin'?'selected':''?>>Web Admin</option></select><button class="small">Change role</button></form><?php endif?>
-<?php if($managed['role']!=='superadmin'||($current['role']==='superadmin'&&(int)$managed['id']===(int)$current['id'])):?><form method="post" action="/admin/users/<?=$managed['id']?>/password" class="inline password-reset"><?=csrf()?><input type="password" name="password" minlength="8" required autocomplete="new-password" placeholder="New password" aria-label="New password for <?=e($managed['name'])?>"><button class="small secondary">Set password</button></form><?php endif?>
+<?php if($managed['role']!=='superadmin'||($current['role']==='superadmin'&&(int)$managed['id']===(int)$current['id'])):?><form method="post" action="/admin/users/<?=$managed['id']?>/password" class="inline password-reset"><?=csrf()?><input type="password" name="password" minlength="<?=$managed['role']==='superadmin'?1:$passwordPolicy['min_length']?>" required autocomplete="new-password" placeholder="New password" aria-label="New password for <?=e($managed['name'])?>" <?php if($managed['role']!=='superadmin'):?>data-password-meter data-min-length="<?=$passwordPolicy['min_length']?>" data-min-strength="<?=e($passwordPolicy['strength'])?>"<?php endif?>><button class="small secondary">Set password</button></form><?php endif?>
 </div></article><?php endforeach?></div>
