@@ -9,6 +9,7 @@ A mobile-first PHP recipe community for Debian where cooks publish recipes, keep
 ## Features
 
 - Public recipe discovery with fast PostgreSQL full-text search
+- Recipe pagination with a remembered 9, 18, 36, 60, or All page-size preference
 - Cuisine and multi-tag classification with combined filtering
 - Private recipes visible only to their owners
 - Ownership-enforced editing and one-click "Make my version" recipe forking
