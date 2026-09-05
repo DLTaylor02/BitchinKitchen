@@ -3,7 +3,7 @@ namespace App;
 final class Auth {
     public static function user(): ?array {
         if (empty($_SESSION['user_id'])) return null;
-        $q=Database::connection()->prepare('SELECT id,name,role FROM users WHERE id=?'); $q->execute([$_SESSION['user_id']]);
+        $q=Database::connection()->prepare('SELECT id,name,role,CASE WHEN must_change_password THEN 1 ELSE 0 END must_change_password FROM users WHERE id=?'); $q->execute([$_SESSION['user_id']]);
         return $q->fetch() ?: null;
     }
     public static function login(string $name, string $password): bool {

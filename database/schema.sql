@@ -15,9 +15,11 @@ CREATE TABLE IF NOT EXISTS users (
   name VARCHAR(100) NOT NULL,
   password_hash VARCHAR(255) NOT NULL,
   role VARCHAR(20) NOT NULL DEFAULT 'user' CHECK (role IN ('superadmin','admin','user')),
+  must_change_password BOOLEAN NOT NULL DEFAULT FALSE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 ALTER TABLE users DROP COLUMN IF EXISTS email;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN NOT NULL DEFAULT FALSE;
 CREATE UNIQUE INDEX IF NOT EXISTS users_name_unique ON users (lower(name));
 CREATE UNIQUE INDEX IF NOT EXISTS one_superadmin ON users ((role)) WHERE role = 'superadmin';
 CREATE TABLE IF NOT EXISTS login_throttles (
