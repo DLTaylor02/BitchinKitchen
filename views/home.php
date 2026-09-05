@@ -7,7 +7,7 @@
         <?php if($mine):?><input type="hidden" name="mine" value="1"><?php elseif($all):?><input type="hidden" name="all" value="1"><?php endif?>
         <div class="filter-row">
             <label>Cuisine<select name="cuisine"><option value="">All cuisines</option><?php foreach($cuisines as $c):?><option value="<?=$c['id']?>" <?=$cuisineId===(int)$c['id']?'selected':''?>><?=e($c['name'])?></option><?php endforeach?></select></label>
-            <fieldset class="filter-tags"><legend>Tags <small>matches all selected</small></legend><div><?php foreach($tags as $tag):?><label><input type="checkbox" name="tags[]" value="<?=$tag['id']?>" <?=in_array((int)$tag['id'],$filterTags,true)?'checked':''?>><span><?=e($tag['name'])?></span></label><?php endforeach?></div></fieldset>
+            <details class="filter-tags"><summary>Tags<?php if($filterTags):?> <b><?=count($filterTags)?> selected</b><?php endif?><small>Matches all selected</small></summary><div><?php foreach($tags as $tag):?><label><input type="checkbox" name="tags[]" value="<?=$tag['id']?>" <?=in_array((int)$tag['id'],$filterTags,true)?'checked':''?>><span><?=e($tag['name'])?></span></label><?php endforeach?></div></details>
             <button class="secondary">Apply filters</button>
             <?php if($query||$cuisineId||$filterTags):?><a href="<?=$favorites?'/favorites':($all?'/?all=1':($mine?'/?mine=1':'/'))?>">Clear</a><?php endif?>
         </div>

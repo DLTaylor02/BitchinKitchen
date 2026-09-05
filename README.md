@@ -68,7 +68,7 @@ The upload controls in `.env` have distinct purposes: `UPLOAD_MAX_FILE_MB` limit
 
 ## Roles and privacy
 
-- **Superadmin:** created once at installation; protected by a partial unique database index and cannot be demoted in the UI.
+- **Superadmin:** created once at installation; controls all settings and can rename or delete other accounts. The account is protected by a partial unique database index and cannot be demoted or deleted in the UI.
 - **Web Admin:** can promote/demote other non-superadmin accounts, manage cuisines and tags, and use all normal recipe features.
 - **User:** can create, view, search, and fork public recipes; can view and edit only their own private recipes.
 
