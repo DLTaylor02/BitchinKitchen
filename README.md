@@ -64,7 +64,7 @@ sudo SUPERADMIN_NAME="Kitchen Owner" \
   ./setup.sh 7373
 ```
 
-`setup.sh` installs missing packages, deploys to `/var/www/bitchinkitchen`, applies the schema, and creates the initial superadmin. Composer runs with plugins and scripts disabled. Run setup from a separate checkout; deployment directories must be empty or carry this installer's `.bitchin-kitchen-install` marker. Source/deployment symlinks are rejected. There is no legacy migration or cleanup.
+`setup.sh` installs missing packages, deploys to `/var/www/bitchinkitchen`, applies the schema, and creates the initial superadmin. Composer runs with plugins and scripts disabled. Run setup from a separate checkout; the destination remains `/var/www/bitchinkitchen`. Setup accepts an empty directory, an installation with its `.bitchin-kitchen-install` marker, or an existing Bitchin Kitchen installation recognized by its Composer package name and application files. It writes the marker during deployment; you do not need to create one manually. Unrelated directories and conflicting markers are rejected, with the destination path included in the error. Source/deployment symlinks are rejected. No legacy cleanup is performed.
 
 On first installation, the source `.env` is copied into the deployment. Subsequent runs read the deployed `.env` and preserve uploads, runtime data, and Composer dependencies while synchronizing code. Explicit environment overrides are saved for application settings. Keep the deployment marker intact.
 

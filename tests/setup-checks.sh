@@ -9,6 +9,27 @@ trap 'rm -rf -- "$TEST_DIR"' EXIT
 die() { printf '%s\n' "$*" >&2; exit 1; }
 extract_function() { sed -n "/^$1() {/,/^}/p" setup.sh; }
 
+# Recognize a real pre-marker installation, but never adopt an unrelated directory.
+eval "$(extract_function recognize_deployment)"
+SITE_NAME=bitchin-kitchen
+deployment="$TEST_DIR/deployment"
+mkdir -p "$deployment/public" "$deployment/src" "$deployment/database"
+if recognize_deployment "$deployment"; then die 'Recognized an empty directory'; fi
+cp composer.json "$deployment/"
+cp public/index.php "$deployment/public/"
+cp src/Database.php src/Auth.php "$deployment/src/"
+cp database/schema.sql "$deployment/database/"
+recognize_deployment "$deployment" || die 'Rejected an existing app without a marker'
+printf 'unrelated-app\n' > "$deployment/.bitchin-kitchen-install"
+if recognize_deployment "$deployment"; then die 'Ignored a conflicting marker'; fi
+printf '%s\n' "$SITE_NAME" > "$deployment/.bitchin-kitchen-install"
+recognize_deployment "$deployment" || die 'Rejected a marked installation'
+unrelated="$TEST_DIR/unrelated"
+mkdir -p "$unrelated/public" "$unrelated/src" "$unrelated/database"
+cp composer.json "$unrelated/"
+touch "$unrelated/public/index.php" "$unrelated/src/Database.php" "$unrelated/src/Auth.php" "$unrelated/database/schema.sql"
+if recognize_deployment "$unrelated"; then die 'Recognized a directory from its manifest alone'; fi
+
 # Environment rewrites preserve special characters and unrelated settings.
 eval "$(extract_function write_env)"
 chown() { :; }

@@ -14,6 +14,20 @@ PHP_REQUEST_SECONDS="${PHP_REQUEST_SECONDS:-60}"
 DB_PROVISION="${DB_PROVISION:-auto}"
 umask 027
 die() { printf 'Error: %s\n' "$*" >&2; exit 1; }
+recognize_deployment() {
+    local directory="$1" marker="$1/.bitchin-kitchen-install" file
+    if [[ -e "$marker" || -L "$marker" ]]; then
+        [[ -f "$marker" && ! -L "$marker" && "$(cat "$marker")" == "$SITE_NAME" ]]
+        return
+    fi
+    # Installations made before the marker was introduced have these app files.
+    for file in composer.json public/index.php src/Database.php src/Auth.php database/schema.sql; do
+        [[ -f "$directory/$file" && ! -L "$directory/$file" ]] || return 1
+    done
+    grep -Eq '"name"[[:space:]]*:[[:space:]]*"bitchin-kitchen/app"' "$directory/composer.json" &&
+        grep -Fq 'session_name('\''bitchin_kitchen'\'')' "$directory/public/index.php" &&
+        grep -Fq 'CREATE TABLE IF NOT EXISTS recipe_photos' "$directory/database/schema.sql"
+}
 [[ $EUID -eq 0 ]] || die "Run this setup as root: sudo ./setup.sh [port]"
 [[ -f /etc/debian_version ]] || die "This installer supports Debian-based systems only"
 [[ ! -L "$APP_DIR" ]] || die "Deployment directory must not be a symlink"
@@ -25,15 +39,17 @@ for tree in "$SOURCE_DIR" "$APP_DIR"; do
     [[ -d "$tree" ]] || continue
     [[ -z "$(find "$tree" -path "$tree/.git" -prune -o -type l -print -quit)" ]] || die "Symlinks inside source or deployment are not supported"
 done
+RECOGNIZED_DEPLOYMENT=0
 if [[ -d "$APP_DIR" && -n "$(find "$APP_DIR" -mindepth 1 -maxdepth 1 -print -quit)" ]]; then
-    [[ -f "$MARKER" && ! -L "$MARKER" && "$(cat "$MARKER")" == "$SITE_NAME" ]] || die "Destination is not a recognized Bitchin Kitchen deployment"
+    recognize_deployment "$APP_DIR" || die "Deployment directory '$APP_DIR' is not recognized as Bitchin Kitchen; refusing to overwrite its contents"
+    RECOGNIZED_DEPLOYMENT=1
 fi
 for value in "$PHP_MEMORY_MB" "$PHP_MAX_CHILDREN" "$PHP_REQUEST_SECONDS"; do
     [[ "$value" =~ ^[1-9][0-9]{0,5}$ ]] || die "PHP limits must be positive integers (at most six digits)"
 done
 SITE_FILE="/etc/nginx/sites-available/$SITE_NAME"
 if [[ -f "$SITE_FILE" ]]; then
-    [[ -f "$MARKER" ]] || die "Nginx site name is already in use"
+    (( RECOGNIZED_DEPLOYMENT )) || die "Nginx site name is already in use"
     existing_port="$(sed -nE 's/^[[:space:]]*listen[[:space:]]+(0\.0\.0\.0:)?([0-9]+);.*/\2/p' "$SITE_FILE" | head -n 1)"
     DEFAULT_PORT="${existing_port:-$DEFAULT_PORT}"
 fi
@@ -57,7 +73,7 @@ if command -v nginx >/dev/null 2>&1; then
 fi
 command -v ss >/dev/null 2>&1 || die "Install iproute2 before setup so listener conflicts can be checked"
 if ss -H -ltn | awk -v port=":$PORT" '$4 ~ (port "$") {found=1} END {exit !found}'; then
-    [[ -f "$MARKER" && "${existing_port:-}" == "$PORT" ]] || die "Port $PORT is already in use"
+    [[ "$RECOGNIZED_DEPLOYMENT" == 1 && "${existing_port:-}" == "$PORT" ]] || die "Port $PORT is already in use"
     ss -H -ltnp "sport = :$PORT" | grep -q '"nginx"' || die "Port $PORT is not owned by Nginx"
 fi
 if [[ -f "$APP_DIR/.env" ]]; then
@@ -129,10 +145,10 @@ FPM_SERVICE="php$PHP_FPM_VERSION-fpm"
 "$FPM_BINARY" -t
 for target in "/etc/php/$PHP_FPM_VERSION/fpm/pool.d/$SITE_NAME.conf" "$SITE_FILE" "/etc/logrotate.d/$SITE_NAME"; do
     [[ ! -L "$target" && ! -d "$target" ]] || die "Unexpected configuration target: $target"
-    [[ ! -e "$target" || -f "$MARKER" ]] || die "Configuration name already in use: $target"
+    [[ ! -e "$target" || "$RECOGNIZED_DEPLOYMENT" == 1 ]] || die "Configuration name already in use: $target"
 done
 if [[ -e "/etc/nginx/sites-enabled/$SITE_NAME" || -L "/etc/nginx/sites-enabled/$SITE_NAME" ]]; then
-    [[ -f "$MARKER" && "$(readlink "/etc/nginx/sites-enabled/$SITE_NAME")" == "$SITE_FILE" ]] || die "Enabled site name already in use"
+    [[ "$RECOGNIZED_DEPLOYMENT" == 1 && "$(readlink "/etc/nginx/sites-enabled/$SITE_NAME")" == "$SITE_FILE" ]] || die "Enabled site name already in use"
 fi
 
 # Reuse PostgreSQL safely: never change an existing role's password or take
@@ -168,7 +184,7 @@ unsafe_role="$("${DB_CLIENT[@]}" -tAc "SELECT EXISTS (SELECT 1 FROM pg_roles WHE
 unset PGPASSWORD
 
 if id -u "$SYSTEM_USER" >/dev/null 2>&1; then
-    [[ -f "$MARKER" ]] || die "System account $SYSTEM_USER already exists without this deployment"
+    (( RECOGNIZED_DEPLOYMENT )) || die "System account $SYSTEM_USER already exists without this deployment"
     case "$(getent passwd "$SYSTEM_USER" | cut -d: -f7)" in */nologin|*/false) ;; *) die "App account must not allow login" ;; esac
 else
     getent group "$SYSTEM_USER" >/dev/null && die "App group already exists without app account"
