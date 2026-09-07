@@ -32,9 +32,11 @@ migrate_database_role() {
     runuser -u postgres -- pg_dump -p "$DB_PORT" -Fc "$DB_NAME" > "$backup_dir/database.dump"
     install -m 0600 "$CONFIG_ENV_FILE" "$backup_dir/env.before"
     printf 'Database and configuration backup: %s\n' "$backup_dir"
+    # Root opens the checkout file; postgres only reads the inherited stream.
+    # Private home directories do not need to be accessible to the service user.
     runuser -u postgres -- psql -X -p "$DB_PORT" -d "$DB_NAME" -v ON_ERROR_STOP=1 \
         -v app_role="$target" -v app_password="$migration_password" \
-        -f "$SOURCE_DIR/config/migrate-database-role.sql" || die "Role migration failed. Its SQL transaction was rolled back; recovery credentials are retained for a retry"
+        -f - < "$SOURCE_DIR/config/migrate-database-role.sql" || die "Role migration did not complete successfully. Existing .env is unchanged; recovery credentials are retained for a retry"
     PGPASSWORD="$migration_password" psql -X -h "$DB_HOST" -p "$DB_PORT" -U "$target" -d "$DB_NAME" \
         -v ON_ERROR_STOP=1 -Atc 'SELECT count(*) FROM public.users' >/dev/null || die "New role could not connect. Existing .env is unchanged; rerun migration after resolving authentication"
     DB_USER="$target"

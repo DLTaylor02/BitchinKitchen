@@ -79,6 +79,29 @@ if (migrate_database_role) 2>/dev/null; then die 'Accepted unexpected migration 
 DB_USER=bitchin_kitchen_app
 migrate_database_role >/dev/null
 
+# Execute the actual migration invocation with a stub service user. It must
+# receive SQL through stdin, never a path that requires access to the checkout.
+(
+    target=bitchin_kitchen_app migration_password=test-only
+    SOURCE_DIR="$ROOT"
+    runuser() {
+        local previous='' argument stdin_file=0
+        for argument in "$@"; do
+            if [[ "$previous" == -f ]]; then
+                [[ "$argument" == - ]] || die 'Migration exposes a checkout path to postgres'
+                stdin_file=1
+            fi
+            previous="$argument"
+        done
+        (( stdin_file )) || die 'Migration did not request SQL on stdin'
+        cat > "$TEST_DIR/migration-stdin.sql"
+    }
+    invocation="$(sed -n '/^    runuser -u postgres -- psql .* -d /,/|| die /p' bin/migrate-database-role.sh)"
+    [[ -n "$invocation" ]] || die 'Migration invocation not found'
+    eval "$invocation"
+    cmp "$SOURCE_DIR/config/migrate-database-role.sql" "$TEST_DIR/migration-stdin.sql"
+)
+
 # Exercise actual provisioning selection without contacting a database.
 selection="$(sed -n '/^case "$DB_PROVISION" in/,/^esac/p' setup.sh)"
 DB_PROVISION=auto DB_HOST=127.0.0.1 DB_PORT=5432
