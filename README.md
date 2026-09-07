@@ -30,7 +30,7 @@ A mobile-first PHP recipe community for Debian where cooks publish recipes, keep
 - PHP 8.2+ with PDO PostgreSQL and fileinfo extensions
 - Composer 2
 - PostgreSQL 14+
-- NGINX and PHP-FPM
+- NGINX and PHP-FPM; iproute2 (`ss`) for preflight listener checks
 - Port 7373 available, or another port of your choice
 
 ## Install on Debian
@@ -46,13 +46,15 @@ chmod +x setup.sh
 sudo ./setup.sh
 ```
 
-The installer prompts for a custom listener port and displays `7373` as the default. Press Enter to accept it, or specify a new port.
+The installer prompts for a custom listener port and displays `7373` on first installation, or the installed port on reruns. It checks for listener conflicts before deployment. Press Enter to accept it, or specify a new port.
 You can also pass a custom listener port as the first argument for unattended or scripted installation:
 ```sh
 sudo ./setup.sh 8088
 ```
 
-If PostgreSQL is already installed, copy `.env.example` to `.env` and edit `DB_HOST`, `DB_PORT`, `DB_USER`, and `DB_PASSWORD` before running setup. The installer reads these credentials from `.env`, reuses the existing service, and never resets an existing role's password or changes ownership of an existing database. If the configured role or database does not exist, setup creates only those dedicated resources without affecting other databases.
+Configure existing PostgreSQL credentials in `.env` before setup. Environment variables override the saved values. By default, setup provisions missing roles/databases only for `127.0.0.1:5432`. Other endpoints must already contain the database and role; no local PostgreSQL server is installed or configured for them. Use `sudo DB_PROVISION=existing ./setup.sh` to disable provisioning even for the default local endpoint. This option must be supplied on each run when desired.
+
+Setup never resets an existing role password or changes an existing database owner. It rejects privileged runtime roles and privileged role memberships. Newly created databases deny access to `PUBLIC`, and their public schema denies public object creation. Existing database permissions remain under the administrator's control. Use a dedicated application database and role with permission to apply the schema.
 
 The installer securely prompts for the initial superadmin username and password. Accounts do not use email addresses. For automated installation, provide the credentials as environment variables:
 ```sh
@@ -61,11 +63,25 @@ sudo SUPERADMIN_NAME="Kitchen Owner" \
   ./setup.sh 7373
 ```
 
-`setup.sh` installs any missing NGINX, PostgreSQL, PHP 8.2+, PHP-FPM extensions, Composer, and supporting packages. It deploys the application to `/var/www/bitchinkitchen`, creates the PostgreSQL role and database, applies the complete schema, creates the sole superadmin, installs Composer packages, configures NGINX, enables services, and validates the NGINX configuration before restarting it. No browser-based installation step is required. Existing NGINX site files are not removed.
+`setup.sh` installs missing packages, deploys to `/var/www/bitchinkitchen`, applies the schema, and creates the initial superadmin. Composer runs with plugins and scripts disabled. Run setup from a separate checkout; deployment directories must be empty or carry this installer's `.bitchin-kitchen-install` marker. Source/deployment symlinks are rejected. There is no legacy migration or cleanup.
 
-The checkout directory is used only as the installation source and is never served by NGINX. On the first installation, a source `.env` is copied into the deployment. After that, `/var/www/bitchinkitchen/.env` is the authoritative configuration. Re-running setup synchronizes application code while preserving that file, uploaded photos, and runtime data. Production code is read-only to `www-data`; only `public/uploads` and `runtime` are writable.
+On first installation, the source `.env` is copied into the deployment. Subsequent runs read the deployed `.env` and preserve uploads, runtime data, and Composer dependencies while synchronizing code. Explicit environment overrides are saved for application settings. Keep the deployment marker intact.
 
-The upload controls in `.env` have distinct purposes: `UPLOAD_MAX_FILE_MB` limits each photograph, while `UPLOAD_MAX_REQUEST_MB` limits the complete multi-photo request. Setup applies the request limit to NGINX and writes matching PHP-FPM limits.
+PHP runs as the non-login `bitchin-kitchen` account in its own FPM pool, using `/run/php/bitchin-kitchen.sock`. Root owns application code and `.env`; the app can read them but only write `runtime`, `public/uploads`, and its private session/temp directories. Nginx receives read/traverse ACLs for public content, including newly uploaded files, and cannot read `.env`. The filesystem must support POSIX ACLs. Only `/index.php` is passed to PHP.
+
+Upload limits apply to this pool and Nginx site only. Resource defaults are 256 MB per PHP request, four workers, and a 60-second request timeout. Override these on each setup run as needed:
+
+```sh
+sudo PHP_MEMORY_MB=256 PHP_MAX_CHILDREN=4 PHP_REQUEST_SECONDS=60 ./setup.sh
+```
+
+These limits do not provide a total memory or CPU quota. Nginx and the PHP-FPM service remain shared, and processes running as `www-data` can access the FPM socket. Stronger isolation requires a separate service or container.
+
+Sessions and temporary files live under `/var/lib/bitchin-kitchen/` with private permissions. PHP session garbage collection runs probabilistically during requests and uses the application's configured timeout, including its no-timeout setting. PHP errors go to `/var/log/bitchin-kitchen/php-error.log` with daily rotation (14 retained files). Nginx app logs live under `/var/log/nginx/` and use Debian's existing Nginx rotation rule.
+
+Setup validates FPM, Nginx, and log rotation configuration, then reloads running services or starts inactive ones. It checks permissions and requests the homepage through Nginx/FPM before declaring success. Failed configuration activation restores the previous app configuration and attempts to reload it. Package installation, code deployment, and database/schema changes are not rolled back; take backups before updates. Other site configurations are preserved.
+
+Run `bash tests/setup-checks.sh` for portable installer behavior checks. Full deployment validation requires a Debian host: test a fresh installation and rerun alongside another site, confirm uploads and sessions work, and verify the neighboring site remains available. Test an existing remote database separately.
 
 ## Roles and privacy
 

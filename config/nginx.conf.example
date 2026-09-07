@@ -6,6 +6,8 @@ server {
     root "{{PROJECT_ROOT}}/public";
     index index.php;
     client_max_body_size {{UPLOAD_MAX_REQUEST_MB}}M;
+    access_log /var/log/nginx/bitchin-kitchen-access.log;
+    error_log /var/log/nginx/bitchin-kitchen-error.log;
 
     gzip on;
     gzip_vary on;
@@ -21,12 +23,13 @@ server {
         image/svg+xml;
 
     location / { try_files $uri $uri/ /index.php?$query_string; }
-    location ~ \.php$ {
+    location = /index.php {
         include fastcgi_params;
         fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
-        # Change this if your PHP-FPM service uses a Unix socket.
-        fastcgi_pass 127.0.0.1:9000;
+        fastcgi_pass unix:{{FPM_SOCKET}};
+        fastcgi_read_timeout {{PHP_REQUEST_SECONDS}}s;
     }
+    location ~ \.php(?:/|$) { return 404; }
     location ~ /\. { deny all; }
     location ^~ /uploads/ { try_files $uri =404; }
 }
