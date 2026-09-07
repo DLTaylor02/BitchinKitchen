@@ -6,6 +6,8 @@
     "php": "^8.2",
     "ext-pdo": "*",
     "ext-fileinfo": "*",
+    "ext-gd": "*",
+    "ext-exif": "*",
     "ext-curl": "*",
     "ext-dom": "*"
   },

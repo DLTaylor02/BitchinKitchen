@@ -17,6 +17,7 @@ A mobile-first PHP recipe community for Debian where cooks publish recipes, keep
 - Per-user recipe favorites with a dedicated Favorites page
 - Superadmin-customizable brand icon
 - Automatic photo resizing to a maximum of 1000×1000 pixels and optimized image encoding
+- JPEG EXIF rotation and mirror correction for phone photos, with filename-specific upload rejection messages
 - Adaptive (default), light, and dark baking-inspired themes
 - Cooking calculators for volume, weight, oven temperature, and recipe scaling
 - Three roles: one immutable superadmin, Web Admins who manage user roles, and regular users
@@ -27,7 +28,7 @@ A mobile-first PHP recipe community for Debian where cooks publish recipes, keep
 
 ## Requirements
 
-- PHP 8.2+ with PDO PostgreSQL and fileinfo extensions
+- PHP 8.2+ with PDO PostgreSQL, fileinfo, GD, and EXIF extensions
 - Composer 2
 - PostgreSQL 14+
 - NGINX and PHP-FPM; iproute2 (`ss`) for preflight listener checks
@@ -82,6 +83,14 @@ Sessions and temporary files live under `/var/lib/bitchin-kitchen/` with private
 Setup validates FPM, Nginx, and log rotation configuration, then reloads running services or starts inactive ones. It checks permissions and requests the homepage through Nginx/FPM before declaring success. Failed configuration activation restores the previous app configuration and attempts to reload it. Package installation, code deployment, and database/schema changes are not rolled back; take backups before updates. Other site configurations are preserved.
 
 Run `bash tests/setup-checks.sh` for portable installer behavior checks. Full deployment validation requires a Debian host: test a fresh installation and rerun alongside another site, confirm uploads and sessions work, and verify the neighboring site remains available. Test an existing remote database separately.
+
+## Image uploads
+
+Rejected photos display their filename and a reason, such as an unsupported format, file-size limit, interrupted upload, unreadable image, excessive dimensions, or storage failure. Valid photos in a submitted batch still save. The browser checks file sizes, counts, and combined image size before submission; select fewer or smaller files if it reports a problem. Entire requests rejected by PHP or Nginx receive a clear “upload too large” response; filenames are unavailable when the server discards the request.
+
+JPEG EXIF orientation is applied before saving, including mirrored orientations. Resizing and re-encoding remove the original EXIF metadata. Brand icons use the same processing. Images above 40 megapixels or the estimated available processing-memory budget are rejected with a resize suggestion. The installer checks for GD and EXIF support; rerun setup to deploy the new Nginx upload-error page.
+
+Run `php tests/image-upload.php` with GD and EXIF enabled to check all eight orientations, resizing, transparency, malformed images, upload error messages, and storage failures. These tests do not need a database.
 
 ## Roles and privacy
 

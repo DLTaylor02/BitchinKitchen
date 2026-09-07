@@ -6,6 +6,8 @@ server {
     root "{{PROJECT_ROOT}}/public";
     index index.php;
     client_max_body_size {{UPLOAD_MAX_REQUEST_MB}}M;
+    error_page 413 /upload-too-large.html;
+    location = /upload-too-large.html { internal; }
     access_log /var/log/nginx/bitchin-kitchen-access.log;
     error_log /var/log/nginx/bitchin-kitchen-error.log;
 

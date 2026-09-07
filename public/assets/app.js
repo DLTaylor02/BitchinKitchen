@@ -1,4 +1,22 @@
 (()=>{
+  document.querySelectorAll('input[type="file"][data-max-mb]').forEach(input=>{
+    const feedback=document.createElement('div');
+    feedback.setAttribute('role','status');
+    feedback.setAttribute('aria-live','polite');
+    input.after(feedback);
+    const validate=()=>{
+      const files=[...input.files],errors=[],maxMb=Number(input.dataset.maxMb),maxFiles=Number(input.dataset.maxFiles),requestMb=Number(input.dataset.requestMb);
+      files.forEach((file,index)=>{
+        if(file.size>maxMb*1024*1024)errors.push(`${file.name}: Larger than ${maxMb} MB. Choose a smaller image.`);
+        if(index>=maxFiles)errors.push(`${file.name}: Too many images selected. Choose at most ${maxFiles} per submission.`);
+      });
+      if(files.reduce((total,file)=>total+file.size,0)>requestMb*1024*1024)errors.push(`The selected images exceed the ${requestMb} MB request limit. Choose fewer or smaller images.`);
+      feedback.replaceChildren(...errors.map(message=>{const p=document.createElement('p');p.textContent=message;return p}));
+      input.setCustomValidity(errors.length?'Please choose images within the limits shown below.':'');
+    };
+    input.addEventListener('change',validate);
+    input.form?.addEventListener('reset',()=>{feedback.replaceChildren();input.setCustomValidity('')});
+  });
   const root=document.documentElement,themeButton=document.querySelector('.theme'),themes=['auto','light','dark'];let theme=localStorage.getItem('theme')||'auto';
   const applyTheme=()=>{theme==='auto'?root.removeAttribute('data-theme'):root.dataset.theme=theme;if(themeButton)themeButton.title=`Theme: ${theme}`};applyTheme();themeButton?.addEventListener('click',()=>{theme=themes[(themes.indexOf(theme)+1)%themes.length];localStorage.setItem('theme',theme);applyTheme()});
   const editor=document.querySelector('.recipe-form'),sourceData=document.querySelector('#recipe-source-data');if(editor&&sourceData){for(const [name,value] of Object.entries({source_url:sourceData.dataset.url||'',source_name:sourceData.dataset.name||'',source_author:sourceData.dataset.author||''})){const input=document.createElement('input');input.type='hidden';input.name=name;input.value=value;editor.append(input)}}

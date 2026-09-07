@@ -122,6 +122,7 @@ fi
 PHP_VERSION="$(php -r 'echo PHP_VERSION;')"
 php -r 'exit(version_compare(PHP_VERSION, "8.2.0", ">=") ? 0 : 1);' || die "PHP 8.2+ is required; installed version is $PHP_VERSION"
 php -m | grep -qi '^pdo_pgsql$' || die "The PHP PDO PostgreSQL extension is not enabled"
+php -r 'exit(extension_loaded("gd") && extension_loaded("exif") ? 0 : 1);' || die "PHP GD and EXIF are required for image uploads"
 PHP_FPM_VERSION="$(php -r 'echo PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION;')"
 FPM_BINARY="$(command -v "php-fpm$PHP_FPM_VERSION")" || die "Matching PHP-FPM is not installed"
 FPM_SERVICE="php$PHP_FPM_VERSION-fpm"

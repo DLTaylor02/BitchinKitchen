@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 require dirname(__DIR__).'/vendor/autoload.php';
-use App\{Auth,Csrf,Database,Env,LoginRateLimiter,PasswordPolicy,RecipeImporter,View};
+use App\{Auth,Csrf,Database,Env,ImageUpload,LoginRateLimiter,PasswordPolicy,RecipeImporter,View};
 Env::load(dirname(__DIR__).'/.env');
 $sessionMinutes=24;
 try{$value=Database::connection()->query("SELECT value FROM settings WHERE key='session_timeout_minutes'")->fetchColumn();if($value!==false)$sessionMinutes=max(0,(int)$value);}catch(Throwable){}
@@ -28,24 +28,28 @@ function recipe(int $id, bool $includePrivate=false): array {
     $sql='SELECT r.*,u.name owner_name,c.name cuisine_name,(SELECT filename FROM recipe_photos WHERE recipe_id=r.id ORDER BY sort_order,id LIMIT 1) thumbnail FROM recipes r JOIN users u ON u.id=r.user_id LEFT JOIN cuisines c ON c.id=r.cuisine_id WHERE r.id=?';
     if(!$includePrivate) $sql.=' AND r.is_public=true'; $q=Database::connection()->prepare($sql); $q->execute([$id]); return $q->fetch() ?: abort(404);
 }
-function store_uploaded_image(string $tmp, string $mime, int $maxDimension=1000): ?string {
-    $formats=['image/jpeg'=>'jpg','image/png'=>'png','image/webp'=>'webp','image/gif'=>'gif'];
-    if(!isset($formats[$mime])||!function_exists('imagecreatefromstring')) return null;
-    $size=@getimagesize($tmp);if(!$size||$size[0]<1||$size[1]<1||$size[0]*$size[1]>40000000)return null;
-    $source=@imagecreatefromstring((string)file_get_contents($tmp));if(!$source)return null;
-    $scale=min(1,$maxDimension/max($size[0],$size[1]));$width=max(1,(int)round($size[0]*$scale));$height=max(1,(int)round($size[1]*$scale));
-    $output=imagecreatetruecolor($width,$height);if(!$output){imagedestroy($source);return null;}
-    if($mime!=='image/jpeg'){imagealphablending($output,false);imagesavealpha($output,true);$transparent=imagecolorallocatealpha($output,0,0,0,127);imagefill($output,0,0,$transparent);}
-    imagecopyresampled($output,$source,0,0,0,0,$width,$height,$size[0],$size[1]);
-    $name=bin2hex(random_bytes(16)).'.'.$formats[$mime];$path=__DIR__.'/uploads/'.$name;
-    $saved=match($mime){'image/jpeg'=>function_exists('imagejpeg')&&imagejpeg($output,$path,82),'image/png'=>function_exists('imagepng')&&imagepng($output,$path,6),'image/webp'=>function_exists('imagewebp')&&imagewebp($output,$path,82),'image/gif'=>function_exists('imagegif')&&imagegif($output,$path)};
-    imagedestroy($output);imagedestroy($source);if(!$saved){@unlink($path);return null;}return $name;
-}
 function save_photos(int $recipeId): void {
-    if(empty($_FILES['photos']['name'][0])) return;
-    $max=(int)Env::get('UPLOAD_MAX_FILE_MB',8)*1024*1024; $finfo=new finfo(FILEINFO_MIME_TYPE); $allowed=['image/jpeg'=>'jpg','image/png'=>'png','image/webp'=>'webp','image/gif'=>'gif'];
+    $files=$_FILES['photos']??null;
+    if(!is_array($files)||!is_array($files['error']??null)) return;
+    $maxMb=(int)Env::get('UPLOAD_MAX_FILE_MB',8);
     $order=(int)Database::connection()->query('SELECT COALESCE(MAX(sort_order),-1)+1 FROM recipe_photos WHERE recipe_id='.(int)$recipeId)->fetchColumn();
-    foreach($_FILES['photos']['tmp_name'] as $i=>$tmp){ if($_FILES['photos']['error'][$i]!==UPLOAD_ERR_OK) continue; if($_FILES['photos']['size'][$i]>$max) continue; $mime=$finfo->file($tmp); if(!isset($allowed[$mime])) continue; $name=store_uploaded_image($tmp,$mime); if($name){ $q=Database::connection()->prepare('INSERT INTO recipe_photos(recipe_id,filename,sort_order) VALUES(?,?,?)'); $q->execute([$recipeId,$name,$order++]); } }
+    foreach($files['error'] as $i=>$error){
+        if($error===UPLOAD_ERR_NO_FILE) continue;
+        $label=basename(str_replace('\\','/',(string)($files['name'][$i]??'')))?:'Photo '.($i+1);
+        $name=null;
+        try {
+            $name=ImageUpload::receive(['error'=>$error,'size'=>$files['size'][$i]??0,'tmp_name'=>$files['tmp_name'][$i]??''],__DIR__.'/uploads',$maxMb);
+            if($name===null) continue;
+            $q=Database::connection()->prepare('INSERT INTO recipe_photos(recipe_id,filename,sort_order) VALUES(?,?,?)');
+            $q->execute([$recipeId,$name,$order]);
+            $order++;
+        } catch(Throwable $error) {
+            if($name!==null) @unlink(__DIR__.'/uploads/'.$name);
+            $message=$error instanceof RuntimeException && !$error instanceof PDOException?$error->getMessage():'The image could not be saved. Please try again.';
+            flash($label.': '.$message,'error');
+            error_log('Bitchin Kitchen image upload failed: '.$error->getMessage());
+        }
+    }
 }
 function safe_return_path(string $path, string $fallback='/'): string { return str_starts_with($path,'/')&&!str_starts_with($path,'//')&&parse_url($path,PHP_URL_HOST)===null?$path:$fallback; }
 function taxonomy_options(int $recipeId=0): array {
@@ -58,6 +62,12 @@ function sync_recipe_tags(int $recipeId, array $tagIds, array $previous=[]): voi
     foreach($tagIds as $tagId){$check->execute([$tagId]);$active=$check->fetchColumn();if($active===true||$active==='t'||$active===1||$active==='1'||in_array($tagId,$previous,true))$insert->execute([$recipeId,$tagId]);}
 }
 
+// PHP discards both POST and FILES when post_max_size is exceeded.
+// Report that condition before CSRF validation can mistake it for an expired session.
+$postLimit=ImageUpload::iniBytes((string)ini_get('post_max_size'));
+if(method_is('POST') && $postLimit>0 && (int)($_SERVER['CONTENT_LENGTH']??0)>$postLimit){
+    abort(413,'The upload request is too large. Nothing from this submission was saved. Go back and choose fewer or smaller images.');
+}
 $path=parse_url($_SERVER['REQUEST_URI'],PHP_URL_PATH) ?: '/';
 try {
 try {
@@ -110,7 +120,17 @@ elseif($path==='/admin/taxonomy'&&method_is('POST')) { Auth::requireAdmin();Csrf
 elseif(preg_match('#^/admin/taxonomy/(cuisine|tag)/(\d+)$#',$path,$m)&&method_is('POST')) { Auth::requireAdmin();Csrf::verify();$table=$m[1]==='cuisine'?'cuisines':'tags';$name=trim($_POST['name']??'');if(strlen($name)<2||strlen($name)>80){flash('Enter a valid name of 2–80 characters.','error');redirect('/admin/settings');}$q=Database::connection()->prepare("UPDATE $table SET name=?,is_active=? WHERE id=?");$q->execute([$name,isset($_POST['is_active'])?'true':'false',(int)$m[2]]);flash(ucfirst($m[1]).' updated.');redirect('/admin/settings'); }
 elseif($path==='/admin/settings'&&method_is('GET')) { $settingsUser=Auth::requireAdmin();$value=Database::connection()->query("SELECT value FROM settings WHERE key='session_timeout_minutes'")->fetchColumn();$brandIcon=Database::connection()->query("SELECT value FROM settings WHERE key='brand_icon'")->fetchColumn()?:null;View::render('admin/settings',['sessionMinutes'=>$value===false?24:(int)$value,'brandIcon'=>$brandIcon,'settingsUser'=>$settingsUser,'loginPolicy'=>LoginRateLimiter::settings(),'passwordPolicy'=>PasswordPolicy::settings(),'cuisines'=>Database::connection()->query('SELECT * FROM cuisines ORDER BY name')->fetchAll(),'tags'=>Database::connection()->query('SELECT * FROM tags ORDER BY name')->fetchAll()]); }
 elseif($path==='/admin/settings'&&method_is('POST')) { Auth::requireSuperadmin();Csrf::verify();$minutes=filter_var($_POST['session_timeout_minutes']??null,FILTER_VALIDATE_INT,['options'=>['min_range'=>0,'max_range'=>5256000]]);if($minutes===false){flash('Enter a whole number from 0 to 5,256,000.','error');redirect('/admin/settings');}$q=Database::connection()->prepare("INSERT INTO settings(key,value)VALUES('session_timeout_minutes',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value");$q->execute([(string)$minutes]);flash($minutes===0?'Sessions will no longer expire due to inactivity.':'Session timeout updated.');redirect('/admin/settings'); }
-elseif($path==='/admin/settings/icon'&&method_is('POST')) { Auth::requireSuperadmin();Csrf::verify();$pdo=Database::connection();$current=$pdo->query("SELECT value FROM settings WHERE key='brand_icon'")->fetchColumn()?:null;if(isset($_POST['remove'])){$q=$pdo->prepare("DELETE FROM settings WHERE key='brand_icon'");$q->execute();if($current)@unlink(__DIR__.'/uploads/'.basename($current));flash('The default pie icon is back.');redirect('/admin/settings');}$file=$_FILES['brand_icon']??null;if(!$file||$file['error']!==UPLOAD_ERR_OK||$file['size']>5*1024*1024){flash('Choose an icon no larger than 5 MB.','error');redirect('/admin/settings');}$mime=(new finfo(FILEINFO_MIME_TYPE))->file($file['tmp_name']);$name=is_string($mime)?store_uploaded_image($file['tmp_name'],$mime,512):null;if(!$name){flash('Choose a valid JPEG, PNG, WebP, or GIF image.','error');redirect('/admin/settings');}$q=$pdo->prepare("INSERT INTO settings(key,value)VALUES('brand_icon',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value");$q->execute([$name]);if($current&&$current!==$name)@unlink(__DIR__.'/uploads/'.basename($current));flash('Brand icon updated.');redirect('/admin/settings'); }
+elseif($path==='/admin/settings/icon'&&method_is('POST')) { Auth::requireSuperadmin();Csrf::verify();$pdo=Database::connection();$current=$pdo->query("SELECT value FROM settings WHERE key='brand_icon'")->fetchColumn()?:null;if(isset($_POST['remove'])){$q=$pdo->prepare("DELETE FROM settings WHERE key='brand_icon'");$q->execute();if($current)@unlink(__DIR__.'/uploads/'.basename($current));flash('The default pie icon is back.');redirect('/admin/settings');}$file=$_FILES['brand_icon']??null;
+try {
+    if(!is_array($file)) throw new RuntimeException('Choose an image to upload.');
+    $name=ImageUpload::receive($file,__DIR__.'/uploads',5,512);
+    if($name===null) throw new RuntimeException('Choose an image to upload.');
+} catch(Throwable $error) {
+    $label=basename(str_replace('\\','/',(string)($file['name']??'')))?:'Brand icon';
+    flash($label.': '.($error instanceof RuntimeException?$error->getMessage():'The image could not be saved. Please try again.'),'error');
+    error_log('Bitchin Kitchen icon upload failed: '.$error->getMessage());
+    redirect('/admin/settings');
+}$q=$pdo->prepare("INSERT INTO settings(key,value)VALUES('brand_icon',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value");$q->execute([$name]);if($current&&$current!==$name)@unlink(__DIR__.'/uploads/'.basename($current));flash('Brand icon updated.');redirect('/admin/settings'); }
 elseif($path==='/admin/settings/security'&&method_is('POST')) { Auth::requireSuperadmin();Csrf::verify();$attempts=filter_var($_POST['login_max_attempts']??null,FILTER_VALIDATE_INT,['options'=>['min_range'=>1,'max_range'=>100]]);$window=filter_var($_POST['login_window_minutes']??null,FILTER_VALIDATE_INT,['options'=>['min_range'=>1,'max_range'=>1440]]);$lockout=filter_var($_POST['login_lockout_minutes']??null,FILTER_VALIDATE_INT,['options'=>['min_range'=>1,'max_range'=>1440]]);$length=filter_var($_POST['password_min_length']??null,FILTER_VALIDATE_INT,['options'=>['min_range'=>8,'max_range'=>128]]);$strength=$_POST['password_min_strength']??'';if($attempts===false||$window===false||$lockout===false||$length===false||!in_array($strength,['basic','standard','strong'],true)){flash('Enter valid security settings within the displayed limits.','error');redirect('/admin/settings');}$values=['login_max_attempts'=>(string)$attempts,'login_window_minutes'=>(string)$window,'login_lockout_minutes'=>(string)$lockout,'password_min_length'=>(string)$length,'password_min_strength'=>$strength,'breach_check_enabled'=>isset($_POST['breach_check_enabled'])?'true':'false'];$pdo=Database::connection();$pdo->beginTransaction();try{$q=$pdo->prepare('INSERT INTO settings(key,value)VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value');foreach($values as $key=>$setting)$q->execute([$key,$setting]);$pdo->exec('DELETE FROM login_throttles');$pdo->commit();}catch(Throwable $error){$pdo->rollBack();throw $error;}flash('Security settings updated. Existing temporary lockouts were cleared.');redirect('/admin/settings'); }
 else abort(404);
 } catch(PDOException $e){ error_log('Bitchin Kitchen database error: '.$e->getMessage());if(Env::bool('APP_DEBUG')) throw $e; abort(500,'Something went wrong in the kitchen.'); }
