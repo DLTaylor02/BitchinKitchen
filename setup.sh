@@ -2,6 +2,11 @@
 set -Eeuo pipefail
 
 DEFAULT_PORT=7373
+MIGRATE_DATABASE_ROLE=0
+if [[ "${1:-}" == --migrate-database-role ]]; then
+    MIGRATE_DATABASE_ROLE=1
+    shift
+fi
 PORT="${1:-}"
 SOURCE_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 APP_DIR="/var/www/bitchinkitchen"
@@ -14,6 +19,14 @@ PHP_REQUEST_SECONDS="${PHP_REQUEST_SECONDS:-60}"
 DB_PROVISION="${DB_PROVISION:-auto}"
 umask 027
 die() { printf 'Error: %s\n' "$*" >&2; exit 1; }
+check_database_role() {
+    local findings
+    findings="$("${DB_CLIENT[@]}" -At -f "$SOURCE_DIR/config/database-role-check.sql")" || die "Could not inspect PostgreSQL role '$DB_USER' on $DB_HOST:$DB_PORT/$DB_NAME"
+    if [[ -n "$findings" ]]; then
+        printf 'PostgreSQL role check failed for %s on %s:%s/%s:\n%s\n' "$DB_USER" "$DB_HOST" "$DB_PORT" "$DB_NAME" "$findings" >&2
+        die "The configured database role has privileges beyond this application. Role permissions were not changed. Review the privileges listed above before choosing a dedicated role or adjusting this role."
+    fi
+}
 recognize_deployment() {
     local directory="$1" marker="$1/.bitchin-kitchen-install" file
     if [[ -e "$marker" || -L "$marker" ]]; then
@@ -155,6 +168,10 @@ fi
 # ownership of an existing database. Custom DB_* values support shared hosts.
 if [[ "$DB_PROVISION" == local ]]; then
 systemctl enable --now postgresql
+if (( MIGRATE_DATABASE_ROLE )); then
+    source "$SOURCE_DIR/bin/migrate-database-role.sh"
+    migrate_database_role
+fi
 ROLE_EXISTS="$(runuser -u postgres -- psql -X -p "$DB_PORT" -v ON_ERROR_STOP=1 -tAc "SELECT 1 FROM pg_roles WHERE rolname='$DB_USER'")"
 DATABASE_EXISTS="$(runuser -u postgres -- psql -X -p "$DB_PORT" -v ON_ERROR_STOP=1 -tAc "SELECT 1 FROM pg_database WHERE datname='$DB_NAME'")"
 if [[ "$DATABASE_EXISTS" == "1" && "$ROLE_EXISTS" != "1" ]]; then
@@ -176,11 +193,11 @@ SQL
     runuser -u postgres -- psql -X -p "$DB_PORT" -d "$DB_NAME" -v ON_ERROR_STOP=1 -c 'REVOKE CREATE ON SCHEMA public FROM PUBLIC'
 fi
 fi
+[[ "$MIGRATE_DATABASE_ROLE" != 1 || "$DB_PROVISION" == local ]] || die "Database-role migration requires local provisioning"
 [[ -n "$DB_PASSWORD" ]] || die "Supply DB_PASSWORD for the existing database"
 export PGPASSWORD="$DB_PASSWORD" PGCONNECT_TIMEOUT=10
 DB_CLIENT=(psql -X -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -v ON_ERROR_STOP=1)
-unsafe_role="$("${DB_CLIENT[@]}" -tAc "SELECT EXISTS (SELECT 1 FROM pg_roles WHERE (rolsuper OR rolcreatedb OR rolcreaterole OR rolreplication OR rolbypassrls OR (rolname LIKE 'pg\\_%' AND rolname <> 'pg_database_owner')) AND pg_has_role(current_user, oid, 'MEMBER'))")"
-[[ "$unsafe_role" == f ]] || die "Use a dedicated unprivileged database role without privileged memberships"
+check_database_role
 unset PGPASSWORD
 
 if id -u "$SYSTEM_USER" >/dev/null 2>&1; then
@@ -223,8 +240,20 @@ write_env APP_URL "$PUBLIC_URL"
 write_env DB_HOST "$DB_HOST"
 write_env DB_PORT "$DB_PORT"
 write_env DB_NAME "$DB_NAME"
-write_env DB_USER "$DB_USER"
-write_env DB_PASSWORD "$DB_PASSWORD"
+# Switch the credential pair atomically, so a failed migration retry never sees
+# the new username paired with the old administrator password.
+write_db_credentials() {
+    local temporary
+    temporary="$(mktemp "$APP_DIR/.env.XXXXXX")"
+    awk '!/^DB_USER=/ && !/^DB_PASSWORD=/' "$ENV_FILE" > "$temporary"
+    printf 'DB_USER=%s\nDB_PASSWORD=%s\n' "$DB_USER" "$DB_PASSWORD" >> "$temporary"
+    chown root:"$SYSTEM_USER" "$temporary"; chmod 0640 "$temporary"
+    mv -f "$temporary" "$ENV_FILE"
+}
+write_db_credentials
+if [[ -n "${MIGRATION_STATE:-}" ]]; then
+    rm -f -- "$MIGRATION_STATE"
+fi
 write_env UPLOAD_MAX_FILE_MB "$UPLOAD_MAX_FILE_MB"
 write_env UPLOAD_MAX_REQUEST_MB "$UPLOAD_MAX_REQUEST_MB"
 

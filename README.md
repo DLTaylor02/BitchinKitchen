@@ -57,6 +57,16 @@ Configure existing PostgreSQL credentials in `.env` before setup. Environment va
 
 Setup never resets an existing role password or changes an existing database owner. It rejects privileged runtime roles and privileged role memberships. Newly created databases deny access to `PUBLIC`, and their public schema denies public object creation. Existing database permissions remain under the administrator's control. Use a dedicated application database and role with permission to apply the schema.
 
+If an existing local installation uses `DB_USER=postgres` for `bitchin_kitchen` on `127.0.0.1:5432`, run the explicit migration option from the updated checkout:
+
+```sh
+sudo ./setup.sh --migrate-database-role
+```
+
+This backs up the database and deployed `.env` under `/var/backups/bitchin-kitchen/`, creates the restricted `bitchin_kitchen_app` login, and transfers only the listed application tables and their owned sequences. It grants the new role database connection and public-schema usage/creation for future schema updates. Database/schema ownership, the `postgres` account, and other databases remain unchanged. The ownership changes run in a transaction; an error rolls that transaction back. Setup verifies the new login, then saves the new username/password together in `.env` and continues installation.
+
+If setup stops before the credential switch, rerun the same migration command. A root-only recovery password under `/var/lib/bitchin-kitchen/setup/` supports retries and is removed after the credential switch. Once migrated, ordinary `sudo ./setup.sh` reruns use the dedicated role. An unrelated pre-existing `bitchin_kitchen_app` role is never reused or reset automatically. This option performs a database-role migration; it does not remove legacy server configuration.
+
 The installer securely prompts for the initial superadmin username and password. Accounts do not use email addresses. For automated installation, provide the credentials as environment variables:
 ```sh
 sudo SUPERADMIN_NAME="Kitchen Owner" \

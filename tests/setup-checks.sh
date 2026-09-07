@@ -4,10 +4,27 @@ set -Eeuo pipefail
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 bash -n setup.sh
+bash -n bin/migrate-database-role.sh
 TEST_DIR="$(mktemp -d)"
 trap 'rm -rf -- "$TEST_DIR"' EXIT
 die() { printf '%s\n' "$*" >&2; exit 1; }
 extract_function() { sed -n "/^$1() {/,/^}/p" setup.sh; }
+
+# Role-check failures identify the connection and cause, and query errors fail closed.
+eval "$(extract_function check_database_role)"
+SOURCE_DIR="$ROOT"
+DB_USER=kitchen DB_HOST=127.0.0.1 DB_PORT=5432 DB_NAME=kitchen
+mock_role_query() { printf '%s' "$ROLE_FINDINGS"; return "$ROLE_QUERY_STATUS"; }
+DB_CLIENT=(mock_role_query)
+ROLE_FINDINGS='' ROLE_QUERY_STATUS=0
+check_database_role
+ROLE_FINDINGS='kitchen: login role; CREATEDB'
+if (check_database_role) 2> "$TEST_DIR/role-error"; then die 'Accepted privileged role'; fi
+grep -Fq '127.0.0.1:5432/kitchen' "$TEST_DIR/role-error"
+grep -Fq 'CREATEDB' "$TEST_DIR/role-error"
+ROLE_FINDINGS='' ROLE_QUERY_STATUS=1
+if (check_database_role) 2> "$TEST_DIR/role-error"; then die 'Ignored failed role query'; fi
+grep -Fq 'Could not inspect PostgreSQL role' "$TEST_DIR/role-error"
 
 # Recognize a real pre-marker installation, but never adopt an unrelated directory.
 eval "$(extract_function recognize_deployment)"
@@ -44,6 +61,23 @@ grep -Fxq "DB_PASSWORD=$password" "$ENV_FILE"
 grep -Fxq 'APP_DEBUG=false' "$ENV_FILE"
 write_env DB_HOST db.example.test
 grep -Fxq 'DB_HOST=db.example.test' "$ENV_FILE"
+eval "$(extract_function write_db_credentials)"
+DB_USER=bitchin_kitchen_app DB_PASSWORD="$password"
+write_db_credentials
+grep -Fxq 'DB_USER=bitchin_kitchen_app' "$ENV_FILE"
+grep -Fxq "DB_PASSWORD=$password" "$ENV_FILE"
+grep -Fxq 'APP_DEBUG=false' "$ENV_FILE"
+
+# Migration refuses other databases/logins before invoking server commands.
+source bin/migrate-database-role.sh
+DB_HOST=127.0.0.1 DB_PORT=5432 DB_NAME=another_app DB_USER=postgres
+if (migrate_database_role) 2>/dev/null; then die 'Accepted migration of unrelated database'; fi
+DB_NAME=bitchin_kitchen RECOGNIZED_DEPLOYMENT=0
+if (migrate_database_role) 2>/dev/null; then die 'Accepted unrecognized deployment migration'; fi
+RECOGNIZED_DEPLOYMENT=1 CONFIG_ENV_FILE="$APP_DIR/.env" DB_USER=another_login
+if (migrate_database_role) 2>/dev/null; then die 'Accepted unexpected migration login'; fi
+DB_USER=bitchin_kitchen_app
+migrate_database_role >/dev/null
 
 # Exercise actual provisioning selection without contacting a database.
 selection="$(sed -n '/^case "$DB_PROVISION" in/,/^esac/p' setup.sh)"
