@@ -7,7 +7,7 @@ $sessionMinutes=24;
 try{$value=Database::connection()->query("SELECT value FROM settings WHERE key='session_timeout_minutes'")->fetchColumn();if($value!==false)$sessionMinutes=max(0,(int)$value);}catch(Throwable){}
 $sessionSeconds=$sessionMinutes===0?315360000:$sessionMinutes*60;
 ini_set('session.gc_maxlifetime',(string)$sessionSeconds);
-session_name('bitchin_kitchen'); session_start(['cookie_lifetime'=>$sessionMinutes===0?$sessionSeconds:0,'cookie_httponly'=>true,'cookie_samesite'=>'Lax','cookie_secure'=>isset($_SERVER['HTTPS'])]);
+session_name('bitchin_kitchen'); session_start(['cookie_lifetime'=>$sessionMinutes===0?$sessionSeconds:0,'cookie_samesite'=>'Lax','cookie_secure'=>isset($_SERVER['HTTPS'])]);
 if(!empty($_SESSION['user_id'])&&$sessionMinutes>0&&!empty($_SESSION['_last_activity'])&&time()-$_SESSION['_last_activity']>$sessionSeconds){unset($_SESSION['user_id']);session_regenerate_id(true);$_SESSION['_flash'][]=['error','Your session expired due to inactivity. Please sign in again.'];}
 if(!empty($_SESSION['user_id']))$_SESSION['_last_activity']=time();
 
