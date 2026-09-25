@@ -202,6 +202,7 @@ rsync -a --delete \
     --exclude='vendor/' \
     --exclude='.env' \
     --exclude='runtime/' \
+    --exclude='var/log/' \
     --exclude='public/uploads/' \
     "$SOURCE_DIR/" "$APP_DIR/"
 ENV_FILE="$APP_DIR/.env"
@@ -286,8 +287,9 @@ unset PGPASSWORD SUPERADMIN_PASSWORD PASSWORD_HASH
 FPM_SOCKET="/run/php/$SITE_NAME.sock"
 SESSION_DIR="/var/lib/$SITE_NAME/sessions"
 TEMP_DIR="/var/lib/$SITE_NAME/tmp"
-LOG_DIR="/var/log/$SITE_NAME"
-install -d -o root -g "$SYSTEM_USER" -m 0750 "/var/lib/$SITE_NAME" "$LOG_DIR"
+LOG_DIR="$APP_DIR/var/log"
+install -d -o root -g "$SYSTEM_USER" -m 0750 "/var/lib/$SITE_NAME" "$APP_DIR/var"
+install -d -o "$SYSTEM_USER" -g "$SYSTEM_USER" -m 0750 "$LOG_DIR"
 install -d -o "$SYSTEM_USER" -g "$SYSTEM_USER" -m 0700 "$SESSION_DIR" "$TEMP_DIR"
 touch "$LOG_DIR/php-error.log"
 chown "$SYSTEM_USER:$SYSTEM_USER" "$LOG_DIR/php-error.log"
@@ -403,6 +405,7 @@ systemctl is-active --quiet nginx
 runuser -u "$SYSTEM_USER" -- test -r "$ENV_FILE"
 runuser -u "$SYSTEM_USER" -- test -w "$APP_DIR/runtime"
 runuser -u "$SYSTEM_USER" -- test -w "$APP_DIR/public/uploads"
+runuser -u "$SYSTEM_USER" -- test -w "$LOG_DIR/php-error.log"
 if runuser -u "$SYSTEM_USER" -- test -w "$APP_DIR/public/index.php"; then die "Application code is writable by PHP"; fi
 if runuser -u www-data -- test -r "$ENV_FILE"; then die "Nginx can read app credentials"; fi
 runuser -u www-data -- test -r "$APP_DIR/public/index.php"
